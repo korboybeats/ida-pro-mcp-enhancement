@@ -6,11 +6,10 @@ import ida_hexrays
 import ida_nalt
 import ida_bytes
 import ida_frame
-import ida_ida
 import idaapi
 
 from .rpc import tool
-from .sync import idasync, ida_major
+from .sync import idasync
 from .utils import (
     normalize_list_input,
     normalize_dict_list,
@@ -21,6 +20,7 @@ from .utils import (
     StructRead,
     TypeEdit,
 )
+from . import compat
 
 
 # ============================================================================
@@ -161,11 +161,7 @@ def read_struct(queries: list[StructRead] | StructRead) -> list[dict]:
                 member_addr = addr + offset
                 try:
                     if member.type.is_ptr():
-                        is_64bit = (
-                            ida_ida.inf_is_64bit()
-                            if ida_major >= 9
-                            else idaapi.get_inf_structure().is_64bit()
-                        )
+                        is_64bit = compat.inf_is_64bit()
                         if is_64bit:
                             value = idaapi.get_qword(member_addr)
                             value_str = f"0x{value:016X}"
@@ -243,7 +239,7 @@ def search_structs(
 ) -> list[dict]:
     """Search structs"""
     results = []
-    limit = ida_typeinf.get_ordinal_limit()
+    limit = compat.get_ordinal_limit()
 
     for ordinal in range(1, limit):
         tif = ida_typeinf.tinfo_t()
@@ -425,23 +421,17 @@ def infer_types(
             ea = parse_address(addr)
             tif = ida_typeinf.tinfo_t()
 
-            # Try Hex-Rays inference (not available in Hopper/non-IDA environments)
-            if ida_hexrays.init_hexrays_plugin() and hasattr(
-                ida_hexrays, "guess_tinfo"
-            ):
-                try:
-                    if ida_hexrays.guess_tinfo(tif, ea):
-                        results.append(
-                            {
-                                "addr": addr,
-                                "inferred_type": str(tif),
-                                "method": "hexrays",
-                                "confidence": "high",
-                            }
-                        )
-                        continue
-                except Exception:
-                    pass  # Fall through to other methods
+            # Try Hex-Rays inference
+            if compat.guess_tinfo(tif, ea):
+                results.append(
+                    {
+                        "addr": addr,
+                        "inferred_type": str(tif),
+                        "method": "hexrays",
+                        "confidence": "high",
+                    }
+                )
+                continue
 
             # Try getting existing type info
             if ida_nalt.get_tinfo(tif, ea):

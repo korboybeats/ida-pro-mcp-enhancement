@@ -90,13 +90,13 @@ class MCP(idaapi.plugin_t):
         self._connecting = False  # 正在连接中标志，防止重复连接
         self._mcp_server = None
         self._auto_connect_tried = False
-        
+
         def auto_connect_timer():
             if not self._auto_connect_tried:
                 self._auto_connect_tried = True
                 self._try_connect(silent=True)
             return -1
-        
+
         idaapi.register_timer(500, auto_connect_timer)
         return idaapi.PLUGIN_KEEP
 
@@ -135,7 +135,7 @@ class MCP(idaapi.plugin_t):
                 is_connected,
                 set_auto_reconnect,
             )
-        
+
         set_auto_reconnect(True)
         self._mcp_server = MCP_SERVER
 
@@ -150,7 +150,7 @@ class MCP(idaapi.plugin_t):
 
         if not silent:
             print("[MCP] 正在连接到 MCP 服务器...")
-        
+
         def do_connect():
             """后台线程执行连接"""
             try:
@@ -163,7 +163,6 @@ class MCP(idaapi.plugin_t):
                     on_mcp_request=handle_mcp_request,
                 )
 
-                # 连接完成后在 UI 线程更新状态
                 def update_status():
                     self._connecting = False
                     if success:
@@ -174,8 +173,8 @@ class MCP(idaapi.plugin_t):
                             print("[MCP] 自动连接失败，按 Ctrl+Alt+M 手动重试")
                         else:
                             print("[MCP] 连接失败，请确保 Cursor 已启动")
-                    return -1  # 不重复执行
-                
+                    return -1
+
                 idaapi.execute_sync(lambda: update_status(), idaapi.MFF_WRITE)
             except Exception as e:
                 def report_error():
@@ -183,8 +182,7 @@ class MCP(idaapi.plugin_t):
                     print(f"[MCP] 连接异常: {e}")
                     return -1
                 idaapi.execute_sync(lambda: report_error(), idaapi.MFF_WRITE)
-        
-        # 启动后台线程执行连接
+
         thread = threading.Thread(target=do_connect, daemon=True)
         thread.start()
 
@@ -192,13 +190,13 @@ class MCP(idaapi.plugin_t):
         """断开与服务器的连接"""
         if not self._connected:
             return
-        
+
         try:
             if TYPE_CHECKING:
                 from .ida_mcp import disconnect
             else:
                 from ida_mcp import disconnect
-            
+
             disconnect()
             self._connected = False
         except Exception:

@@ -10,6 +10,14 @@
 - api_instances.py: HTTP+SSE 连接管理
 """
 
+# Ignore SIGPIPE to prevent IDA from being killed when an MCP client
+# disconnects while the HTTP server is writing a response. IDA's embedded
+# Python may not preserve CPython's default SIG_IGN for SIGPIPE.
+import signal
+
+if hasattr(signal, "SIGPIPE"):
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+
 # Import infrastructure modules
 from . import rpc
 from . import sync

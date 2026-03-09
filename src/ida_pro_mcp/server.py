@@ -277,6 +277,7 @@ mcp.registry.dispatch = dispatch_proxy
 
 
 # =====================================================================
+
 def main():
     global HTTP_SERVER, _stdio_stdout, _broker_client
 
@@ -301,7 +302,7 @@ def main():
         return
 
     if args.uninstall:
-        install_ida_plugin(uninstall=True, allow_ida_free=args.allow_ida_free)
+        install_ida_plugin(uninstall=True)
         install_mcp_servers(uninstall=True)
         return
 
