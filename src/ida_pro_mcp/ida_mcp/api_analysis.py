@@ -748,7 +748,6 @@ def _profile_function(
 @idasync
 @tool_timeout(90.0)
 def decompile(
-def decompile(
     addr: Annotated[
         str,
         "函数地址或名称。支持: 0x401000、401000、sub_401000、start、main。",
@@ -1485,7 +1484,6 @@ def xrefs_to_field(
 @tool
 @idasync
 def callees(
-def callees(
     addrs: Annotated[
         list[str] | str,
         "函数地址。该函数内调用的目标列表。支持 hex、符号名、逗号分隔。",
@@ -1658,7 +1656,6 @@ def find_bytes(
 
 @tool
 @idasync
-def basic_blocks(
 def basic_blocks(
     addrs: Annotated[
         list[str] | str,
@@ -2240,7 +2237,6 @@ def insn_query(
 
 @tool
 @idasync
-def export_funcs(
 def export_funcs(
     addrs: Annotated[
         list[str] | str,
