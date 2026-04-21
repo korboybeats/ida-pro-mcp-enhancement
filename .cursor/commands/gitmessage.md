@@ -1,72 +1,72 @@
-# Git 提交到本地
+# Git Commit to Local
 
-根据当前工作区的 git 变更（`git status`、`git diff`），生成符合项目规范的提交消息并直接执行 `git commit` 提交到本地仓库。
+Based on the current workspace's git changes (`git status`, `git diff`), generate a commit message that follows project conventions and directly execute `git commit` to commit to the local repository.
 
-## 执行步骤
+## Execution Steps
 
-1. 查看 `git status` 和 `git diff --staged`（或 `git diff`）获取变更内容
-2. 分析每条变更的性质（新功能 / 修复 / 新增 / 重构等），并归类到对应前缀
-3. 生成符合以下规则的提交消息（摘要用 prefix，正文每条也带 prefix）
-4. **若暂存区为空**：执行 `git add -u` 将已跟踪文件的修改加入暂存区
-5. **执行 `git commit -m "<生成的消息>"` 提交到本地**
+1. Run `git status` and `git diff --staged` (or `git diff`) to review changes
+2. Analyze the nature of each change (new feature / fix / addition / refactor, etc.) and categorize with the appropriate prefix
+3. Generate a commit message following the rules below (summary uses prefix, body lines also use prefixes)
+4. **If the staging area is empty**: Run `git add -u` to stage modifications to tracked files
+5. **Execute `git commit -m "<generated message>"` to commit locally**
 
-## 必须遵循的规则
+## Required Rules
 
-### 1. 使用中文
+### 1. Use English
 
-提交消息必须使用中文撰写。
+Commit messages must be written in English.
 
-### 2. 分析变更内容
+### 2. Analyze Change Content
 
-需清晰表述每条变更：
-- **性质**：feat / fix / add / refactor / chore 等
-- **内容**：该条变更做了什么、解决了什么问题
+Each change should be clearly described:
+- **Nature**: feat / fix / add / refactor / chore, etc.
+- **Content**: What the change does and what problem it solves
 
-### 3. 消息格式（必须使用 Conventional Commits 前缀）
+### 3. Message Format (Must Use Conventional Commits Prefixes)
 
-**摘要行**：使用 `feat:`、`fix:`、`add:`、`refactor:`、`chore:` 等前缀概括本次提交性质。
+**Summary line**: Use prefixes like `feat:`, `fix:`, `add:`, `refactor:`, `chore:` to summarize the commit's nature.
 
-**正文列表**：每条变更单独一行，**必须以对应前缀开头**，后接该条变更的简要描述。
+**Body list**: Each change on its own line, **must start with the corresponding prefix**, followed by a brief description of that change.
 
 ```
-<prefix>: <简要概括>
+<prefix>: <brief summary>
 
-- feat: 描述新功能
-- fix: 描述修复内容
-- add: 描述新增内容
-- refactor: 描述重构内容
-- chore: 描述杂项变更
+- feat: describe new feature
+- fix: describe fix
+- add: describe addition
+- refactor: describe refactoring
+- chore: describe miscellaneous change
 ```
 
-**常用前缀**：
-- `feat:` 新功能
-- `fix:` 修复问题
-- `add:` 新增文件/依赖/配置
-- `refactor:` 代码重构
-- `chore:` 构建、工具、无关逻辑的杂项
-- `docs:` 文档
-- `perf:` 性能优化
+**Common prefixes**:
+- `feat:` New feature
+- `fix:` Bug fix
+- `add:` New file/dependency/config
+- `refactor:` Code refactoring
+- `chore:` Build, tools, non-logic miscellaneous
+- `docs:` Documentation
+- `perf:` Performance optimization
 
-### 4. 示例参考
+### 4. Examples
 
-- ✅ 好的示例：
+- Good example:
 ```
-feat: XXX 模块重构与 YYY 问题修复
+feat: refactor XXX module and fix YYY issue
 
-- feat: 将默认实例改为由 Manager 统一管理
-- fix: ZZZ 场景下不再伪造路径，避免破坏特权能力
-- add: 新增 hasXXX() 检测方法
-- chore: 增强读写日志输出
-```
-
-- ✅ 好的示例（单行）：
-```
-fix: 某未授权场景导致同步失败
+- feat: change default instance to be managed by Manager
+- fix: stop faking paths in ZZZ scenario to avoid breaking privileged capabilities
+- add: add hasXXX() detection method
+- chore: enhance read/write log output
 ```
 
-- ❌ 差的示例：「fix bug」、「update code」、正文行无前缀
+- Good example (single line):
+```
+fix: unauthorized scenario causing sync failure
+```
 
-## 输出
+- Bad examples: "fix bug", "update code", body lines without prefixes
 
-1. 执行提交后，输出简短确认（如「已提交到本地」及本次 commit message 摘要）
-2. 若暂存区为空且工作区有未暂存变更，先执行 `git add -A` 再 `git commit`
+## Output
+
+1. After committing, output a brief confirmation (e.g., "Committed locally" and a summary of the commit message)
+2. If the staging area is empty but the working tree has unstaged changes, run `git add -A` first then `git commit`

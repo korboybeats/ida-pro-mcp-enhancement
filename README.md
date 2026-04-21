@@ -1,87 +1,87 @@
 # IDA Pro MCP
 
-> 增强版作者：**QiuChenly** · [GitHub @QiuChenly](https://github.com/QiuChenly)
+> Enhanced version by: **QiuChenly** · [GitHub @QiuChenly](https://github.com/QiuChenly)
 >
-> 基于上游 [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) 深度改造，新增 Broker 纯路由架构与客户端侧 SQLite 静态缓存接管层。
+> Deep refactor based on upstream [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp), adding a pure-routing Broker architecture and client-side SQLite static cache interception layer.
 
-一套面向 IDA Pro 的 [MCP（Model Context Protocol）](https://modelcontextprotocol.io/introduction) 服务端，让大模型以结构化工具调用的方式读写 IDA IDB，用于逆向工程、二进制分析、Hook 开发等场景。
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/introduction) server for IDA Pro that lets LLMs read and write IDA IDBs via structured tool calls, designed for reverse engineering, binary analysis, hook development, and more.
 
-英文原版文档请参阅 [README.en.md](./README.en.md)。本 README 描述的是在上游之上增强过的 Broker 架构与 SQLite 静态缓存接管层。
+For the original English documentation, see [README.en.md](./README.en.md). This README describes the enhanced Broker architecture and SQLite static cache interception layer built on top of the upstream project.
 
-示例视频与 prompt：见 [mcp-reversing-dataset](https://github.com/mrexodia/mcp-reversing-dataset)。
-
----
-
-## 一、项目亮点（本增强版 vs. 上游）
-
-- **Broker 进程纯路由**：独立监听 `127.0.0.1:13337`，IDA 实例与所有 MCP 客户端都只和它交互；多 Cursor 窗口、多 IDA 同时挂载不再抢端口。
-- **客户端侧 SQLite 静态缓存（`xxx.idb.mcp.sqlite`）**：IDA 插件在 IDA idle 时由守护线程把字符串、函数、全局、导入、交叉引用全量落地到 IDB 旁的 SQLite 文件。
-- **缓存接管 tools/call**：`find_regex / entity_query / list_funcs / list_globals / imports / refresh_cache / cache_status` 共 7 个工具在 IDA 插件进程内部被 **直接用本地 SQLite 响应**，完全不占用 IDA 主线程。
-- **严格类型协议**：全部新增 API 的请求/返回走 `TypedDict`（`FindRegexArgs / FindRegexResult / ToolSchema / McpToolCallResult` 等），消除"字段是否存在"之类的不确定性。
-- **Broker 注入虚拟工具**：`refresh_cache` 与 `cache_status` 作为虚拟 `ToolSchema` 追加到 `tools/list` 结果中，模型可以直接看到并调用，但它们并不在 Broker 执行，最终仍被路由到指定 IDA 实例。
-- **idalib 无头模式**：通过 `idalib-mcp` 运行纯 headless 服务，支持 `--isolated-contexts` 做严格的每连接上下文隔离。
+Example videos and prompts: see [mcp-reversing-dataset](https://github.com/mrexodia/mcp-reversing-dataset).
 
 ---
 
-## 二、环境要求
+## 1. Highlights (This Enhanced Version vs. Upstream)
 
-- Python 3.11+（建议使用 `idapyswitch` 切换到最新 Python）
-- IDA Pro 8.3+（推荐 9.0+），**不支持 IDA Free**
-- 支持任意标准 MCP 客户端：Cursor / Claude / Claude Code / Codex / VS Code / Gemini CLI / Cline 等
+- **Pure-routing Broker process**: Listens independently on `127.0.0.1:13337`; IDA instances and all MCP clients interact only with it. Multiple Cursor windows and multiple IDA instances can connect simultaneously without port conflicts.
+- **Client-side SQLite static cache (`xxx.idb.mcp.sqlite`)**: The IDA plugin uses a daemon thread during IDA idle time to dump all strings, functions, globals, imports, and cross-references to a SQLite file alongside the IDB.
+- **Cache-intercepted tools/call**: 7 tools — `find_regex / entity_query / list_funcs / list_globals / imports / refresh_cache / cache_status` — are **responded to directly from the local SQLite** within the IDA plugin process, completely avoiding the IDA main thread.
+- **Strict type protocol**: All new API requests/responses use `TypedDict` (`FindRegexArgs / FindRegexResult / ToolSchema / McpToolCallResult`, etc.), eliminating "does this field exist?" uncertainties.
+- **Broker-injected virtual tools**: `refresh_cache` and `cache_status` are appended as virtual `ToolSchema` entries to the `tools/list` results. The model can see and call them directly, but they don't execute in the Broker — they're ultimately routed to the designated IDA instance.
+- **idalib headless mode**: Run a pure headless service via `idalib-mcp`, with `--isolated-contexts` for strict per-connection context isolation.
 
 ---
 
-## 三、安装
+## 2. Requirements
+
+- Python 3.11+ (recommended to use `idapyswitch` to switch to the latest Python)
+- IDA Pro 8.3+ (9.0+ recommended), **IDA Free is not supported**
+- Any standard MCP client: Cursor / Claude / Claude Code / Codex / VS Code / Gemini CLI / Cline, etc.
+
+---
+
+## 3. Installation
 
 ```bash
 pip uninstall ida-pro-mcp
 pip install https://github.com/QiuChenly/ida-pro-mcp-enhancement/archive/refs/heads/main.zip
 ```
 
-本地开发安装：
+Local development install:
 
 ```bash
 cd ida-pro-mcp-enhancement && uv venv && uv pip install -e .
 ```
 
-配置 MCP 客户端和 IDA 插件：
+Configure MCP clients and IDA plugin:
 
 ```bash
 ida-pro-mcp --install
 ```
 
-安装完成后请**完全重启** IDA 和 MCP 客户端。某些客户端（如 Claude Desktop）在后台常驻，需要从托盘图标退出。IDA 插件菜单需要先加载一个二进制文件才会出现。
+After installation, **fully restart** IDA and your MCP client. Some clients (e.g., Claude Desktop) run in the background — exit them from the system tray. The IDA plugin menu only appears after loading a binary file.
 
 ---
 
-## 四、总体架构
+## 4. Overall Architecture
 
-下面这张图描述本增强版的所有运行时组件与数据流。
+The diagram below describes all runtime components and data flows of this enhanced version.
 
 ```mermaid
 flowchart LR
-    subgraph Clients[MCP 客户端]
-        CurA[Cursor 窗口 A]
-        CurB[Cursor 窗口 B]
+    subgraph Clients[MCP Clients]
+        CurA[Cursor Window A]
+        CurB[Cursor Window B]
         Claude[Claude / Codex / VS Code ...]
     end
 
-    subgraph MCPProc[MCP 进程 - 每个客户端各一份]
+    subgraph MCPProc[MCP Process - One per Client]
         direction TB
-        MA[ida-pro-mcp 进程 A - stdio]
-        MB[ida-pro-mcp 进程 B - stdio]
-        DispatchProxy[dispatch_proxy - tools/list 注入虚拟工具 / tools/call 走路由]
+        MA[ida-pro-mcp Process A - stdio]
+        MB[ida-pro-mcp Process B - stdio]
+        DispatchProxy[dispatch_proxy - tools/list injects virtual tools / tools/call routes]
     end
 
-    subgraph BrokerProc[Broker 进程 - 127.0.0.1:13337 - 唯一监听]
-        Registry[IDA 实例注册表]
-        Router[纯路由 HTTP + SSE]
+    subgraph BrokerProc[Broker Process - 127.0.0.1:13337 - Single Listener]
+        Registry[IDA Instance Registry]
+        Router[Pure Routing HTTP + SSE]
     end
 
-    subgraph IDAProc[IDA 插件进程]
-        Plugin[ida_mcp 插件 - handle_mcp_request]
-        CacheHandlers[cache_handlers - 本地拦截 7 个缓存工具]
-        Daemon[sqlite_cache 守护线程 - idle 时刷新]
+    subgraph IDAProc[IDA Plugin Process]
+        Plugin[ida_mcp Plugin - handle_mcp_request]
+        CacheHandlers[cache_handlers - Local interception of 7 cache tools]
+        Daemon[sqlite_cache Daemon Thread - Refreshes on idle]
         DB[(xxx.idb.mcp.sqlite)]
         IDAAPI[IDA / Hex-Rays API]
     end
@@ -95,141 +95,142 @@ flowchart LR
     MA --> DispatchProxy
     MB --> DispatchProxy
 
-    Router <-- HTTP 注册 + SSE 推送 --> Plugin
+    Router <-- HTTP Registration + SSE Push --> Plugin
 
-    Plugin -- 先命中? --> CacheHandlers
-    CacheHandlers -- 只读 --> DB
-    Plugin -- 未命中 --> IDAAPI
-    Daemon -- 采集 --> IDAAPI
-    Daemon -- 批量写入 --> DB
+    Plugin -- Cache hit? --> CacheHandlers
+    CacheHandlers -- Read-only --> DB
+    Plugin -- Cache miss --> IDAAPI
+    Daemon -- Collect --> IDAAPI
+    Daemon -- Batch write --> DB
 ```
 
-关键点：
+Key points:
 
-- **MCP 进程不绑端口**：每个客户端窗口自己启动一份 `ida-pro-mcp`（stdio），它们全部把请求通过 HTTP 丢给 Broker。
-- **Broker 只做路由**：它不读 IDB、不读 SQLite，完全不碰业务逻辑；只负责把 JSON-RPC 请求按 `instance_id` 扔给对应的 IDA 插件，并把 SSE 回写的响应拿回来。
-- **SQLite 读写都在 IDA 进程内**：写由守护线程负责（idle 触发），读由 `handle_mcp_request` 的拦截层负责（命中就查 DB，不再走 IDA API）。Broker 进程绝不 import `sqlite_cache / sqlite_query`。
+- **MCP processes don't bind ports**: Each client window starts its own `ida-pro-mcp` instance (stdio), and they all forward requests to the Broker via HTTP.
+- **Broker only routes**: It doesn't read IDBs or SQLite, and has zero business logic. It simply forwards JSON-RPC requests to the corresponding IDA plugin by `instance_id` and relays SSE responses back.
+- **SQLite reads and writes happen within the IDA process**: Writes are handled by the daemon thread (triggered on idle); reads are handled by the `handle_mcp_request` interception layer (cache hit queries the DB instead of the IDA API). The Broker process never imports `sqlite_cache / sqlite_query`.
 
 ---
 
-## 五、一次 tools/call 的完整时序
+## 5. Complete Sequence of a tools/call
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant LLM as 大模型 / MCP 客户端
-    participant MCP as ida-pro-mcp 进程 (stdio)
-    participant BRK as Broker 进程 127.0.0.1:13337
-    participant IDA as IDA 插件 handle_mcp_request
+    participant LLM as LLM / MCP Client
+    participant MCP as ida-pro-mcp Process (stdio)
+    participant BRK as Broker Process 127.0.0.1:13337
+    participant IDA as IDA Plugin handle_mcp_request
     participant CACHE as cache_handlers + sqlite_query
     participant HR as IDA / Hex-Rays
 
     LLM->>MCP: tools/call find_regex(instance_id=...)
 
-    Note over MCP: dispatch_proxy 判断工具名命中 IDA 白名单
-    MCP->>BRK: HTTP JSON-RPC 转发
-    Note over BRK: 按 instance_id 查注册表
-    BRK-->>IDA: 通过 SSE 通道下发请求
+    Note over MCP: dispatch_proxy checks tool name against IDA whitelist
+    MCP->>BRK: HTTP JSON-RPC forward
+    Note over BRK: Lookup instance_id in registry
+    BRK-->>IDA: Deliver request via SSE channel
 
     IDA->>CACHE: is_cache_tool(req)?
-    alt 命中缓存拦截名单
-        CACHE->>CACHE: 打开 .mcp.sqlite (只读) 并检查 meta.status
+    alt Hits cache interception list
+        CACHE->>CACHE: Open .mcp.sqlite (read-only) and check meta.status
         alt status == ready
-            CACHE->>CACHE: SQL + REGEXP 查询
-            CACHE-->>IDA: TypedDict 结构化结果
-        else status != ready 或 DB 缺失
-            CACHE-->>IDA: JSON-RPC error -32001 缓存未就绪，稍后重试或 refresh_cache
+            CACHE->>CACHE: SQL + REGEXP query
+            CACHE-->>IDA: TypedDict structured result
+        else status != ready or DB missing
+            CACHE-->>IDA: JSON-RPC error -32001 cache not ready, retry later or call refresh_cache
         end
-    else 未命中 (普通 IDA 工具)
-        IDA->>HR: 走 ida_mcp 正常 dispatch
-        HR-->>IDA: 结果
+    else Not intercepted (regular IDA tool)
+        IDA->>HR: Normal ida_mcp dispatch
+        HR-->>IDA: Result
     end
 
     IDA-->>BRK: JSON-RPC response
-    BRK-->>MCP: HTTP 响应
-    MCP-->>LLM: tools/call 结果
+    BRK-->>MCP: HTTP response
+    MCP-->>LLM: tools/call result
 ```
 
-缓存未就绪时**不会回退到实时 IDA API**，而是直接向模型报错并提示稍后重试或先调用 `refresh_cache`。这是一种有意的硬性语义：避免在大模型未知状态下拿到"半新半旧"数据造成误判。
+When the cache is not ready, it **does not fall back to the live IDA API**. Instead, it reports an error directly to the model with instructions to retry later or call `refresh_cache` first. This is an intentional hard semantic: it prevents the LLM from receiving "half-new, half-old" data in an unknown state, which could lead to incorrect analysis.
 
 ---
 
-## 六、SQLite 缓存守护线程生命周期
+## 6. SQLite Cache Daemon Thread Lifecycle
 
 ```mermaid
 stateDiagram-v2
-    [*] --> 未连接
-    未连接 --> 已连接: IDA 注册到 Broker
-    已连接 --> 首次写入: 守护线程检测 auto_is_ok() + hex-rays 初始化完成
-    首次写入 --> 写入中: status=building
-    写入中 --> 就绪: 全量写入完成 status=ready
-    就绪 --> 写入中: IDB 保存 / refresh_cache 触发 / 30 分钟兜底轮询
-    写入中 --> 错误: 采集或写入异常
-    错误 --> 写入中: 下一次 idle 自动重试
-    就绪 --> [*]: IDA 关闭 / 断开
-    写入中 --> [*]: IDA 关闭 / 断开
+    [*] --> Disconnected
+    Disconnected --> Connected: IDA registers with Broker
+    Connected --> FirstWrite: Daemon detects auto_is_ok() + Hex-Rays initialization complete
+    FirstWrite --> Writing: status=building
+    Writing --> Ready: Full write complete, status=ready
+    Ready --> Writing: IDB save / refresh_cache triggered / 30-min fallback poll
+    Writing --> Error: Collection or write exception
+    Error --> Writing: Next idle auto-retry
+    Ready --> [*]: IDA closed / disconnected
+    Writing --> [*]: IDA closed / disconnected
 ```
 
-- 缓存文件名固定为 `<idb 路径>.mcp.sqlite`，随 IDB 一起落盘。
-- `meta` 表记录 `status`（`building / ready`）、`last_updated` 等。
-- 使用 WAL 模式，允许写入进行中仍被只读 `file:...?mode=ro` 连接查询（读到旧快照）。
-- `cache_status` 查询不抛错：文件缺失时返回 `{exists: false, status: "missing"}`。
-- **重新索引触发时机**（三种，任一满足即触发，触发后等待 IDA idle 再执行全量重建）：
-  1. **IDB 保存**：IDA 每次保存数据库（Ctrl+S 或自动保存）时，`IDB_Hooks.savebase` 回调立即唤醒守护线程，确保重命名、新增函数等变更实时同步。
-  2. **主动调用 `refresh_cache`**：MCP 客户端显式触发，绕过所有检查直接重建。
-  3. **30 分钟兜底轮询**：定时唤醒时检查 IDB 文件 mtime，若与上次重建时一致则跳过，避免无意义的全量扫描。
+- Cache filename is fixed as `<IDB path>.mcp.sqlite`, stored alongside the IDB.
+- The `meta` table records `status` (`building / ready`), `last_updated`, etc.
+- Uses WAL mode, allowing read-only `file:...?mode=ro` connections to query while writes are in progress (reading the old snapshot).
+- `cache_status` queries never throw errors: when the file is missing, it returns `{exists: false, status: "missing"}`.
+- **Re-indexing triggers** (any one of these three triggers a full rebuild, which executes during IDA idle):
+  1. **IDB save**: Every time IDA saves the database (Ctrl+S or auto-save), the `IDB_Hooks.savebase` callback immediately wakes the daemon thread, ensuring renames, new functions, and other changes are synced in real-time.
+  2. **Explicit `refresh_cache` call**: Triggered explicitly by the MCP client, bypasses all checks and directly rebuilds.
+  3. **30-minute fallback poll**: On timed wakeup, checks the IDB file mtime. If unchanged since the last rebuild, it skips to avoid unnecessary full scans.
 
 ---
 
-## 七、使用方式（Broker 模式）
+## 7. Usage (Broker Mode)
 
-多窗口 Cursor、多个 IDA 实例并用时，请务必**先启动 Broker**，再启动客户端。
+When using multiple Cursor windows or multiple IDA instances, make sure to **start the Broker first**, then start the clients.
 
 ```bash
-# 1. 先启动 Broker（保持一个终端常开）
+# 1. Start the Broker first (keep a terminal open)
 uv run ida-pro-mcp --broker
-# 或自定义端口
+# Or with a custom port
 uv run ida-pro-mcp --broker --port 13337
 
-# 2. 启动 Cursor/Claude/VS Code 等，它们会通过 stdio 启动
-#    自己的 ida-pro-mcp 进程，并向上面的 Broker 发请求
+# 2. Start Cursor/Claude/VS Code etc. — they will launch
+#    their own ida-pro-mcp processes via stdio and send
+#    requests to the Broker above
 
-# 3. 打开 IDA、加载二进制，按 Ctrl+Alt+M 连接到 Broker
+# 3. Open IDA, load a binary, press Ctrl+Alt+M to connect to the Broker
 ```
 
-### 多实例模式
+### Multi-Instance Mode
 
-同时分析多个二进制：打开多个 IDA，分别按 Ctrl+Alt+M 连上 Broker。
+To analyze multiple binaries simultaneously: open multiple IDA instances and press Ctrl+Alt+M in each to connect to the Broker.
 
-| 工具 | 说明 |
-|------|------|
-| `instance_list()` | 列出所有已连接 IDA 实例（`instance_id, name, binary_path, idb_path, base_addr`） |
-| `instance_info(instance_id)` | 获取指定实例的详细信息 |
+| Tool | Description |
+|------|-------------|
+| `instance_list()` | List all connected IDA instances (`instance_id, name, binary_path, idb_path, base_addr`) |
+| `instance_info(instance_id)` | Get detailed info for a specific instance |
 
-本增强版不再提供"当前活动实例"的隐式状态，也没有 `instance_switch / instance_current`。每次调用业务工具（如 `decompile`、`xrefs_to`、`find_regex` 等）时都**必须**在 `arguments` 里显式带 `instance_id`，由 Broker 精确路由到目标 IDA。这样做是为了避免多个 MCP 客户端共享同一个 Broker 时相互踩隐式状态。
+This enhanced version no longer provides implicit "current active instance" state, nor `instance_switch / instance_current`. Every business tool call (e.g., `decompile`, `xrefs_to`, `find_regex`, etc.) **must** explicitly include `instance_id` in the `arguments`, and the Broker will precisely route to the target IDA. This prevents multiple MCP clients sharing the same Broker from stepping on each other's implicit state.
 
 ---
 
-## 八、命令行参数
+## 8. Command-Line Arguments
 
-| 参数 | 说明 |
-|------|------|
-| `--install` | 安装 IDA 插件 + 各 MCP 客户端配置 |
-| `--uninstall` | 卸载 IDA 插件 + 各 MCP 客户端配置 |
-| `--unsafe` | 启用调试器等不安全工具（`dbg_*`） |
-| `--broker` | 仅启动 Broker（HTTP，不启动 stdio） |
-| `--broker-url URL` | 当前 MCP 进程要连的 Broker 地址，默认 `http://127.0.0.1:13337` |
-| `--port PORT` | Broker 监听端口，默认 13337 |
-| `--transport URL` | 以 SSE 方式直接挂载到上游 MCP 传输，如 `http://127.0.0.1:8744/sse` |
-| `--config` | 打印当前 MCP 配置 |
+| Argument | Description |
+|----------|-------------|
+| `--install` | Install IDA plugin + configure all MCP clients |
+| `--uninstall` | Uninstall IDA plugin + remove MCP client configs |
+| `--unsafe` | Enable unsafe tools like debugger (`dbg_*`) |
+| `--broker` | Start Broker only (HTTP, no stdio) |
+| `--broker-url URL` | Broker address for the current MCP process to connect to, default `http://127.0.0.1:13337` |
+| `--port PORT` | Broker listen port, default 13337 |
+| `--transport URL` | Attach directly to an upstream MCP transport via SSE, e.g., `http://127.0.0.1:8744/sse` |
+| `--config` | Print current MCP configuration |
 
-Broker 地址也可由环境变量指定：
+The Broker address can also be set via environment variable:
 
 ```bash
 IDA_MCP_BROKER_URL=http://127.0.0.1:13337 ida-pro-mcp
 ```
 
-### 启用调试器工具
+### Enabling Debugger Tools
 
 ```json
 {
@@ -244,193 +245,193 @@ IDA_MCP_BROKER_URL=http://127.0.0.1:13337 ida-pro-mcp
 
 ---
 
-## 九、缓存相关工具
+## 9. Cache-Related Tools
 
-| 工具 | 语义 | 错误行为 |
-|------|------|---------|
-| `find_regex(instance_id, pattern, limit?, offset?, include_xrefs?)` | 正则搜索字符串表，含 xrefs | status != ready 时抛 `-32001` |
-| `entity_query(instance_id, kind, name_pattern?, segment?, ...)` | 统一实体查询，kind ∈ `strings / functions / globals / imports` | 同上 |
-| `list_funcs(instance_id, name_pattern?, ..., include_xrefs?)` | 函数列表，可带 xrefs | 同上 |
-| `list_globals(instance_id, name_pattern?, ...)` | 全局变量列表 | 同上 |
-| `imports(instance_id, name_pattern?, module_pattern?, ...)` | 导入表列表 | 同上 |
-| `refresh_cache(instance_id)` | 唤醒目标 IDA 的缓存守护线程，立即返回 `{triggered, idb_path}` | 永不抛错 |
-| `cache_status(instance_id)` | 查询缓存文件是否存在、`status`、各表计数 | 文件不存在时返回 `{exists: false, status: "missing"}` |
+| Tool | Semantics | Error Behavior |
+|------|-----------|----------------|
+| `find_regex(instance_id, pattern, limit?, offset?, include_xrefs?)` | Regex search the string table, with xrefs | Throws `-32001` when status != ready |
+| `entity_query(instance_id, kind, name_pattern?, segment?, ...)` | Unified entity query, kind ∈ `strings / functions / globals / imports` | Same as above |
+| `list_funcs(instance_id, name_pattern?, ..., include_xrefs?)` | Function list, optionally with xrefs | Same as above |
+| `list_globals(instance_id, name_pattern?, ...)` | Global variables list | Same as above |
+| `imports(instance_id, name_pattern?, module_pattern?, ...)` | Import table list | Same as above |
+| `refresh_cache(instance_id)` | Wake the target IDA's cache daemon thread, returns immediately with `{triggered, idb_path}` | Never throws |
+| `cache_status(instance_id)` | Query whether the cache file exists, `status`, table counts | Returns `{exists: false, status: "missing"}` when file doesn't exist |
 
-错误码约定：
-- `-32001`：缓存未就绪 / 文件缺失
-- `-32000`：未提供 `instance_id` 或没有活动 IDA 实例
-- `-32602`：参数错误（如 `entity_query.kind` 非法）
-- `-32603`：SQLite 查询内部异常
+Error code conventions:
+- `-32001`: Cache not ready / file missing
+- `-32000`: No `instance_id` provided or no active IDA instances
+- `-32602`: Parameter error (e.g., invalid `entity_query.kind`)
+- `-32603`: SQLite query internal exception
 
 ---
 
-## 十、非缓存工具总览
+## 10. Non-Cache Tools Overview
 
-以下工具仍走 IDA API 正常 dispatch，由插件进程通过 `@idasync` 在 IDA 主线程执行。
+The following tools still go through normal IDA API dispatch, executed on the IDA main thread via `@idasync` in the plugin process.
 
-下列工具均为代码中真实注册的工具名（以仓库 `api_*.py` 中的 `@tool` 定义为准），若有出入请以源码为准。
+All tool names listed below are the actual registered names in the codebase (defined by `@tool` in the `api_*.py` files). If there are discrepancies, the source code is authoritative.
 
-### 核心查询
-- `lookup_funcs(queries)` 按地址或名称获取函数
-- `int_convert(inputs)` 十进制 / 十六进制 / 字节 / ASCII / 二进制互转
-- `decompile(addr)` / `disasm(addr)` 反编译 / 反汇编
-- `xrefs_to(addrs)` / `xref_query(queries)` / `xrefs_to_field(queries)` 交叉引用
-- `callees(addrs)` 被调用函数
-- `func_profile(queries)` 快速获取函数画像（prolog / 返回 / 基本块摘要等）
+### Core Queries
+- `lookup_funcs(queries)` — Look up functions by address or name
+- `int_convert(inputs)` — Convert between decimal / hex / bytes / ASCII / binary
+- `decompile(addr)` / `disasm(addr)` — Decompile / disassemble
+- `xrefs_to(addrs)` / `xref_query(queries)` / `xrefs_to_field(queries)` — Cross-references
+- `callees(addrs)` — Called functions
+- `func_profile(queries)` — Quick function profile (prologue / return / basic block summary, etc.)
 
-### 修改
-- `set_comments(items)` 反汇编与伪代码视图同时写注释
-- `patch_asm(items)` 汇编级补丁
-- `declare_type(decls)` 在 IDB 本地类型库声明 C 类型
-- `define_func(items)` / `define_code(items)` / `undefine(items)` 函数 / 代码定义控制
+### Modification
+- `set_comments(items)` — Write comments in both disassembly and pseudocode views
+- `patch_asm(items)` — Assembly-level patches
+- `declare_type(decls)` — Declare C types in the IDB local type library
+- `define_func(items)` / `define_code(items)` / `undefine(items)` — Function / code definition control
 
-### 内存读取
+### Memory Reading
 - `get_bytes(addrs)` / `get_int(queries)` / `get_string(addrs)` / `get_global_value(queries)`
 
-### 栈帧
+### Stack Frames
 - `stack_frame(addrs)` / `declare_stack(items)` / `delete_stack(items)`
 
-### 结构体
+### Structures
 - `read_struct(queries)` / `search_structs(filter)`
 
-### 高级分析
-- `py_eval(code)` 在 IDA 上下文执行任意 Python
-- `analyze_function(addr, ...)` 单函数深入分析（反编译 + 汇编 + xrefs + 调用关系 + 基本块 + 常量 + 字符串）
-- `analyze_batch(queries)` 批量版 `analyze_function`
-- `analyze_component(...)` 以入口为根的组件级分析（调用树 + 数据流摘要）
-- `diff_before_after(...)` 前后快照差异分析
-- `trace_data_flow(...)` 数据流追踪
+### Advanced Analysis
+- `py_eval(code)` — Execute arbitrary Python in the IDA context
+- `analyze_function(addr, ...)` — Deep single-function analysis (decompile + assembly + xrefs + call relationships + basic blocks + constants + strings)
+- `analyze_batch(queries)` — Batch version of `analyze_function`
+- `analyze_component(...)` — Component-level analysis rooted at an entry point (call tree + data flow summary)
+- `diff_before_after(...)` — Before/after snapshot diff analysis
+- `trace_data_flow(...)` — Data flow tracing
 
-### 模式搜索
-- `find_bytes(patterns)` 字节模式搜索（支持 `48 8B ?? ??`）
-- `insn_query(queries)` 按助记符 / 操作数语义的指令序列查询
-- `find(type, targets)` 立即值 / 字符串 / 数据与代码引用统一搜索
+### Pattern Search
+- `find_bytes(patterns)` — Byte pattern search (supports `48 8B ?? ??`)
+- `insn_query(queries)` — Instruction sequence query by mnemonic / operand semantics
+- `find(type, targets)` — Unified search for immediates / strings / data and code references
 
-### 控制流 / 类型 / 导出 / 图
+### Control Flow / Types / Exports / Graphs
 - `basic_blocks(addrs)`
 - `set_type(edits)` / `infer_types(addrs)`
-- `export_funcs(addrs, format)` 导出为 `json / c_header / prototypes`
+- `export_funcs(addrs, format)` — Export as `json / c_header / prototypes`
 - `callgraph(roots, max_depth)`
 
-### 批量
-- `rename(batch)` 函数 / 全局 / 局部 / 栈变量统一批量改名
-- `patch(patches)` 批量字节修补
-- `put_int(items)` 批量写整数
+### Batch Operations
+- `rename(batch)` — Unified batch rename for functions / globals / locals / stack variables
+- `patch(patches)` — Batch byte patching
+- `put_int(items)` — Batch integer writing
 
-### 调试器（需 `--unsafe`）
-- 控制：`dbg_start / dbg_exit / dbg_continue / dbg_run_to / dbg_step_into / dbg_step_over`
-- 断点：`dbg_bps / dbg_add_bp / dbg_delete_bp / dbg_toggle_bp`
-- 寄存器：`dbg_regs / dbg_regs_all / dbg_gpregs / dbg_regs_named / dbg_regs_remote / dbg_gpregs_remote / dbg_regs_named_remote`
-- 栈 / 内存：`dbg_stacktrace / dbg_read / dbg_write`
-
----
-
-## 十一、MCP 资源（只读状态）
-
-按 MCP 规范暴露的 `ida://` 资源：
-
-- `ida://idb/metadata` IDB 元数据（路径、架构、基址、哈希）
-- `ida://idb/segments` 段与权限
-- `ida://idb/entrypoints` 入口点（main / TLS 回调等）
-- `ida://cursor` 当前光标 + 所在函数
-- `ida://selection` 当前选区
-- `ida://types` 本地类型
-- `ida://structs` 所有结构 / 联合
-- `ida://struct/{name}` 结构字段
-- `ida://import/{name}` 按名查导入
-- `ida://export/{name}` 按名查导出
-- `ida://xrefs/from/{addr}` 从地址出发的交叉引用
+### Debugger (requires `--unsafe`)
+- Control: `dbg_start / dbg_exit / dbg_continue / dbg_run_to / dbg_step_into / dbg_step_over`
+- Breakpoints: `dbg_bps / dbg_add_bp / dbg_delete_bp / dbg_toggle_bp`
+- Registers: `dbg_regs / dbg_regs_all / dbg_gpregs / dbg_regs_named / dbg_regs_remote / dbg_gpregs_remote / dbg_regs_named_remote`
+- Stack / Memory: `dbg_stacktrace / dbg_read / dbg_write`
 
 ---
 
-## 十二、SSE 传输与无头 idalib
+## 11. MCP Resources (Read-Only State)
 
-直接以 SSE 方式对外提供服务：
+`ida://` resources exposed per the MCP specification:
+
+- `ida://idb/metadata` — IDB metadata (path, architecture, base address, hash)
+- `ida://idb/segments` — Segments and permissions
+- `ida://idb/entrypoints` — Entry points (main / TLS callbacks, etc.)
+- `ida://cursor` — Current cursor position + containing function
+- `ida://selection` — Current selection
+- `ida://types` — Local types
+- `ida://structs` — All structures / unions
+- `ida://struct/{name}` — Structure fields
+- `ida://import/{name}` — Look up import by name
+- `ida://export/{name}` — Look up export by name
+- `ida://xrefs/from/{addr}` — Cross-references from an address
+
+---
+
+## 12. SSE Transport & Headless idalib
+
+Serve directly via SSE transport:
 
 ```bash
 uv run ida-pro-mcp --transport http://127.0.0.1:8744/sse
 ```
 
-无头（需安装 [`idalib`](https://docs.hex-rays.com/user-guide/idalib)）：
+Headless mode (requires [`idalib`](https://docs.hex-rays.com/user-guide/idalib)):
 
 ```bash
 uv run idalib-mcp --host 127.0.0.1 --port 8745 path/to/executable
-# 严格的每连接上下文隔离
+# Strict per-connection context isolation
 uv run idalib-mcp --isolated-contexts --host 127.0.0.1 --port 8745 path/to/executable
 ```
 
-`--isolated-contexts` 的语义：
+`--isolated-contexts` semantics:
 
-- 每个传输上下文（`/mcp` 的 `Mcp-Session-Id`、`/sse` 的 `session`、stdio 的 `stdio:default`）都有自己独立的 session 绑定。
-- 未绑定上下文调用 IDB 依赖工具会直接失败，避免跨 Agent 误操作。
-- 多 Agent 想共享同一 session 时，通过 `idalib_switch(session_id)` 主动加入即可。
+- Each transport context (`/mcp`'s `Mcp-Session-Id`, `/sse`'s `session`, stdio's `stdio:default`) has its own independent session binding.
+- Unbound contexts calling IDB-dependent tools will fail immediately, preventing cross-agent misoperations.
+- When multiple agents want to share the same session, they can explicitly join via `idalib_switch(session_id)`.
 
-上下文管理工具：
+Context management tools:
 
-- `idalib_open(input_path, ...)` 打开并绑定
-- `idalib_switch(session_id)` 切换绑定
-- `idalib_current()` 查当前绑定
-- `idalib_unbind()` 解绑
-- `idalib_list()` 列表，带 `is_active / is_current_context / bound_contexts`
+- `idalib_open(input_path, ...)` — Open and bind
+- `idalib_switch(session_id)` — Switch binding
+- `idalib_current()` — Query current binding
+- `idalib_unbind()` — Unbind
+- `idalib_list()` — List sessions, with `is_active / is_current_context / bound_contexts`
 
 ---
 
-## 十三、提示工程建议
+## 13. Prompt Engineering Tips
 
-大模型在进制转换、数学计算、混淆代码上容易出错。务必：
+LLMs are prone to errors with base conversion, math calculations, and obfuscated code. Make sure to:
 
-- 明确要求使用 `int_convert` 工具做进制转换，不要让模型手算。
-- 必要时配合 [math-mcp](https://github.com/EthanHenrickson/math-mcp) 做复杂运算。
-- 混淆代码先做预处理再交给 LLM：字符串解密、导入哈希、控制流平坦化、代码加密、反反编译技巧。
-- 用 Lumina 或 FLIRT 把开源库、C++ STL 先解掉。
+- Explicitly require using the `int_convert` tool for base conversions — don't let the model calculate manually.
+- Use [math-mcp](https://github.com/EthanHenrickson/math-mcp) for complex calculations when needed.
+- Preprocess obfuscated code before handing it to the LLM: string decryption, import hashing, control flow flattening, code encryption, anti-decompilation tricks.
+- Use Lumina or FLIRT to resolve open-source libraries and C++ STL first.
 
-一个适用于 crackme 场景的最小提示：
+A minimal prompt suitable for crackme scenarios:
 
 ```md
-你的任务是在 IDA Pro 中分析一个 crackme。你可以使用 MCP 工具获取信息。总体策略：
+Your task is to analyze a crackme in IDA Pro. You can use MCP tools to gather information. Overall strategy:
 
-- 先用 decompile / disasm 审阅反编译与汇编
-- 对可疑代码加注释，然后把变量、参数、函数重命名为具有描述性的名字
-- 必要时修正类型（尤其是指针、数组）
-- 绝对不要自己做进制转换，一律用 int_convert
-- 不要暴力破解，只从反汇编和简单 python 脚本中推导结论
-- 分析完成后写一份 report.md，最后把找到的密码交给用户确认
+- Start by reviewing the decompiled and disassembled code using decompile / disasm
+- Add comments to suspicious code, then rename variables, parameters, and functions to descriptive names
+- Fix types when necessary (especially pointers and arrays)
+- Never do base conversions yourself — always use int_convert
+- Don't brute-force — derive conclusions only from disassembly and simple Python scripts
+- After analysis, write a report.md, and present the discovered password to the user for confirmation
 ```
 
 ---
 
-## 十四、常见问题
+## 14. FAQ
 
-**Q：IDA 插件连接失败 / `instance_list` 空？**
+**Q: IDA plugin connection failed / `instance_list` is empty?**
 
-1. 先单独启动 Broker：`uv run ida-pro-mcp --broker`（保持运行）
-2. 再启动 Cursor / Claude / VS Code 等
-3. 在 IDA 里按 Ctrl+Alt+M 连接
-4. 如端口冲突：`ida-pro-mcp --broker --port 13338`，并确保 IDA 插件与 MCP 客户端的 `broker-url` 一致
+1. Start the Broker separately first: `uv run ida-pro-mcp --broker` (keep it running)
+2. Then start Cursor / Claude / VS Code, etc.
+3. In IDA, press Ctrl+Alt+M to connect
+4. If there's a port conflict: `ida-pro-mcp --broker --port 13338`, and make sure the IDA plugin and MCP client `broker-url` match
 
-**Q：调用 `find_regex / list_funcs` 等返回 `-32001`？**
+**Q: Calling `find_regex / list_funcs` etc. returns `-32001`?**
 
-说明本地 `.mcp.sqlite` 还没写好，属于正常初始化期。可以：
+This means the local `.mcp.sqlite` hasn't finished building yet — this is normal during initialization. You can:
 
-- 调用 `cache_status(instance_id=...)` 查看 `status` 与各表计数。
-- 调用 `refresh_cache(instance_id=...)` 主动唤醒缓存守护线程。
-- 稍等片刻后重试。
+- Call `cache_status(instance_id=...)` to check `status` and table counts.
+- Call `refresh_cache(instance_id=...)` to manually wake the cache daemon thread.
+- Wait a moment and retry.
 
-**Q：缓存文件在哪？能删吗？**
+**Q: Where is the cache file? Can I delete it?**
 
-就在 IDB 旁边：`<idb 路径>.mcp.sqlite`（和 `.mcp.sqlite-wal / -shm` 同目录）。随时可删；下次 IDA idle 时会重建。
+Right next to the IDB: `<IDB path>.mcp.sqlite` (along with `.mcp.sqlite-wal / -shm` in the same directory). You can delete it anytime; it will be rebuilt next time IDA is idle.
 
-**Q：`uv pip install -e .` 提示 "Failed to clone files; falling back to full copy"？**
+**Q: `uv pip install -e .` shows "Failed to clone files; falling back to full copy"?**
 
-这只是 uv 的 warning（reflink 跨卷失败），构建其实成功。本项目 `pyproject.toml` 已内置 `[tool.uv] link-mode = "copy"` 消除该提示。
+This is just a uv warning (reflink failed across volumes) — the build actually succeeded. This project's `pyproject.toml` includes `[tool.uv] link-mode = "copy"` to suppress this warning.
 
-**Q：支持 IDA Free 吗？**
+**Q: Does it support IDA Free?**
 
-不支持，IDA Free 没有插件 API。
+No. IDA Free doesn't have the plugin API.
 
-**Q：按 G 键跳转失败？**
+**Q: Pressing G to jump fails?**
 
-请更新到最新版本后重启 IDA：
+Update to the latest version and restart IDA:
 
 ```bash
 uv pip install -e .
@@ -438,41 +439,41 @@ uv pip install -e .
 
 ---
 
-## 十五、开发
+## 15. Development
 
-核心实现位置：
+Core implementation locations:
 
-- `src/ida_pro_mcp/server.py` 主 MCP 服务端入口（stdio / broker 双模式分发）
-- `src/ida_pro_mcp/idalib_server.py` idalib 无头服务端
-- `src/ida_pro_mcp/ida_mcp.py` IDA 插件入口与 `handle_mcp_request`
-- `src/ida_pro_mcp/ida_mcp/api_*.py` 所有业务工具与资源（纯 IDA 侧）
-- `src/ida_pro_mcp/broker/server.py` Broker HTTP + 注册表 + SSE
-- `src/ida_pro_mcp/broker/manager.py` `dispatch_proxy` 路由 + 虚拟工具注入
-- `src/ida_pro_mcp/broker/sqlite_cache.py` 插件侧 idle 守护 + 写入
-- `src/ida_pro_mcp/broker/sqlite_query.py` 插件侧只读查询（强类型）
-- `src/ida_pro_mcp/broker/cache_handlers.py` `tools/call` 的本地缓存拦截
-- `src/ida_pro_mcp/broker/cache_types.py` 全部协议 `TypedDict`（`JsonRpcRequest / Response / Error / ToolSchema / *Args / *Result`）
+- `src/ida_pro_mcp/server.py` — Main MCP server entry point (stdio / broker dual-mode dispatch)
+- `src/ida_pro_mcp/idalib_server.py` — idalib headless server
+- `src/ida_pro_mcp/ida_mcp.py` — IDA plugin entry point and `handle_mcp_request`
+- `src/ida_pro_mcp/ida_mcp/api_*.py` — All business tools and resources (IDA-side only)
+- `src/ida_pro_mcp/broker/server.py` — Broker HTTP + registry + SSE
+- `src/ida_pro_mcp/broker/manager.py` — `dispatch_proxy` routing + virtual tool injection
+- `src/ida_pro_mcp/broker/sqlite_cache.py` — Plugin-side idle daemon + writes
+- `src/ida_pro_mcp/broker/sqlite_query.py` — Plugin-side read-only queries (strongly typed)
+- `src/ida_pro_mcp/broker/cache_handlers.py` — `tools/call` local cache interception
+- `src/ida_pro_mcp/broker/cache_types.py` — All protocol `TypedDict`s (`JsonRpcRequest / Response / Error / ToolSchema / *Args / *Result`)
 
-新增工具只需：
+To add a new tool:
 
-1. 在对应的 `api_*.py` 里写一个 `@tool` + `@idasync` 函数，带完整 Python 类型注解；
-2. 用 `Annotated[...]` 写参数说明，函数 docstring 就是暴露给模型的 tool description；
-3. MCP 服务端会自动扫描 `api_*.py` 并注册，无需手动改 schema。
+1. Write a `@tool` + `@idasync` function in the corresponding `api_*.py` with complete Python type annotations;
+2. Use `Annotated[...]` for parameter descriptions; the function docstring becomes the tool description exposed to the model;
+3. The MCP server automatically scans `api_*.py` files and registers them — no manual schema changes needed.
 
-运行测试：
+Running tests:
 
 ```bash
 uv run ida-mcp-test tests/crackme03.elf -q
 uv run ida-mcp-test tests/typed_fixture.elf -q
 ```
 
-MCP inspector 调试：
+MCP inspector debugging:
 
 ```bash
 uv run mcp dev src/ida_pro_mcp/server.py
 ```
 
-覆盖率：
+Coverage:
 
 ```bash
 uv run coverage erase
@@ -483,33 +484,33 @@ uv run coverage report --show-missing
 
 ---
 
-## 十六、与其它 IDA MCP 的差异
+## 16. Comparison with Other IDA MCP Implementations
 
-市面上已有数个 IDA Pro MCP 实现，本仓库在上游 [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) 的基础上重点做了两件事：
+Several IDA Pro MCP implementations already exist. This repository builds on the upstream [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) with two key improvements:
 
-- 把 Broker 做成纯路由，解决多客户端并发问题；
-- 在客户端侧引入 SQLite 静态缓存，把高频只读查询从 IDA 主线程移走，让大模型在大规模分析场景下不再因 IDA API 往返而被拖慢。
+- Made the Broker a pure router, solving multi-client concurrency issues;
+- Introduced client-side SQLite static caching, moving high-frequency read-only queries off the IDA main thread so that LLMs in large-scale analysis scenarios are no longer bottlenecked by IDA API round-trips.
 
-其他实现（便于对比选型）：
+Other implementations (for comparison):
 
-- https://github.com/mrexodia/ida-pro-mcp 上游
-- https://github.com/taida957789/ida-mcp-server-plugin 仅 SSE，IDAPython 装依赖
-- https://github.com/fdrechsler/mcp-server-idapro TypeScript，新增功能需大量样板
-- https://github.com/MxIris-Reverse-Engineering/ida-mcp-server 自定义 socket，样板重
+- https://github.com/mrexodia/ida-pro-mcp — Upstream
+- https://github.com/taida957789/ida-mcp-server-plugin — SSE only, requires IDAPython dependencies
+- https://github.com/fdrechsler/mcp-server-idapro — TypeScript, requires extensive boilerplate for new features
+- https://github.com/MxIris-Reverse-Engineering/ida-mcp-server — Custom socket, heavy boilerplate
 
-欢迎 PR 补充。
-
----
-
-## 十七、许可证
-
-见 [LICENSE](./LICENSE)。
+PRs welcome.
 
 ---
 
-## 署名
+## 17. License
 
-- **增强版维护者**：[QiuChenly](https://github.com/QiuChenly)
-- **上游原作者**：[mrexodia](https://github.com/mrexodia)
+See [LICENSE](./LICENSE).
 
-本项目在上游 `ida-pro-mcp` 的基础上由 QiuChenly 增强实现 Broker 路由架构、SQLite 静态缓存接管与严格类型协议等特性。如在论文、博客或工具中使用，请同时署名上游作者与本增强版作者。
+---
+
+## Attribution
+
+- **Enhanced version maintainer**: [QiuChenly](https://github.com/QiuChenly)
+- **Original upstream author**: [mrexodia](https://github.com/mrexodia)
+
+This project was enhanced by QiuChenly on top of the upstream `ida-pro-mcp`, implementing the Broker routing architecture, SQLite static cache interception, and strict type protocol features. If used in papers, blog posts, or tools, please credit both the upstream author and the enhanced version author.

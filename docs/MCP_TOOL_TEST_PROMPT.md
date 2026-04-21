@@ -1,221 +1,221 @@
-# IDA Pro MCP 工具完整测试提示词
+# IDA Pro MCP Tool Complete Test Prompt
 
-> 用于指导 AI 或人工系统化测试 IDA MCP 函数，验证传参、数据解析与行为正确性。
+> A guide for AI or manual systematic testing of IDA MCP functions, verifying parameter passing, data parsing, and behavioral correctness.
 
 ---
 
-## 零、一键复制：AI 测试指令（可直接发给 AI）
+## 0. Quick Copy: AI Test Instructions (Send Directly to AI)
 
 ```
-请按以下规则系统化测试 IDA Pro MCP 工具（user-ida-pro-mcp）：
+Please systematically test the IDA Pro MCP tools (user-ida-pro-mcp) following these rules:
 
-1. 对每个工具，依次尝试：字符串、对象、数组三种传参格式（若 schema 支持）
-2. 覆盖地址格式：0x401000、401000、sub_401000、符号名、非法值
-3. 测试空值与边界：""、[]、{}、count=0、超长输入
-4. 记录每次调用的「输入 → 输出/错误」，判断是否符合预期
-5. 重点检查：get_bytes 支持 `"addr:size"` 字符串格式，list_funcs 的 `"0:50"` 为 offset:count（列表索引，非地址范围）
+1. For each tool, try three parameter formats in sequence: string, object, and array (if the schema supports it)
+2. Cover address formats: 0x401000, 401000, sub_401000, symbol names, invalid values
+3. Test empty and boundary values: "", [], {}, count=0, excessively long input
+4. Record "input → output/error" for each call and determine whether it matches expectations
+5. Key checks: get_bytes supports `"addr:size"` string format, list_funcs `"0:50"` means offset:count (list index, not address range)
 
-优先测试：instance_list、int_convert、list_funcs、decompile、get_bytes、lookup_funcs、rename。
+Priority tools: instance_list, int_convert, list_funcs, decompile, get_bytes, lookup_funcs, rename.
 ```
 
 ---
 
-## 一、测试前准备
+## 1. Pre-Test Setup
 
-1. **环境**：IDA Pro 已加载二进制（建议用小型可执行文件，如 `/bin/ls` 或简单 PE）
-2. **连接**：IDA 插件已启动 MCP 服务，Broker 运行中
-3. **工具**：通过 MCP 客户端（如 Cursor、MCP Inspector）调用 `user-ida-pro-mcp` 服务器工具
-
----
-
-## 二、测试原则
-
-- **参数格式多样性**：每个工具应测试 `str`、`object`、`array` 三种传入方式（若 schema 支持）
-- **边界与异常**：空值、非法值、超长输入
-- **地址格式**：`0x401000`、`401000`（十进制）、`sub_401000`、符号名
-- **记录**：对每次调用记录「输入 → 输出/错误」，判断是否符合预期
+1. **Environment**: IDA Pro has a binary loaded (recommend a small executable like `/bin/ls` or a simple PE)
+2. **Connection**: The IDA plugin has started the MCP service and the Broker is running
+3. **Tools**: Call `user-ida-pro-mcp` server tools through an MCP client (e.g., Cursor, MCP Inspector)
 
 ---
 
-## 三、测试用例清单
+## 2. Testing Principles
 
-### 3.1 实例管理（无需 IDA 加载）
-
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `instance_list` | `{}` | 返回实例列表，至少包含当前连接 |
-| `instance_current` | `{}` | 返回当前实例 id、name、binary_path 等 |
-| `instance_switch` | `{"instance_id": "<有效id>"}` | 切换成功或无错误 |
-| `instance_info` | `{"instance_id": "<有效id>"}` | 返回该实例详情 |
+- **Parameter format diversity**: Each tool should be tested with `str`, `object`, and `array` input formats (if the schema supports it)
+- **Boundary & exception cases**: Empty values, invalid values, excessively long input
+- **Address formats**: `0x401000`, `401000` (decimal), `sub_401000`, symbol names
+- **Recording**: Record "input → output/error" for each call and determine whether it matches expectations
 
 ---
 
-### 3.2 数值转换（无 IDA 依赖）
+## 3. Test Case Checklist
 
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `int_convert` | `{"inputs": "0x41"}` | 返回 decimal=65, hex=0x41, ascii="A" |
-| `int_convert` | `{"inputs": ["0x41", "255"]}` | 返回两个转换结果 |
-| `int_convert` | `{"inputs": {"text": "0x1000", "size": 32}}` | 按 32 位解析 |
-| `int_convert` | `{"inputs": "not_a_number"}` | 返回 error，无 crash |
-| `int_convert` | `{"inputs": ""}` | 正确处理空字符串 |
+### 3.1 Instance Management (No IDA Load Required)
 
----
-
-### 3.3 核心查询
-
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `list_funcs` | `{"queries": "main"}` | 返回匹配 "main" 的函数列表 |
-| `list_funcs` | `{"queries": {"offset": 0, "count": 5}}` | 返回前 5 个函数，含 `data`、`next_offset` |
-| `list_funcs` | `{"queries": ["*", ""]}` | 两个查询，第二个为全量（filter 为空） |
-| `list_funcs` | `{"queries": "0:50"}` | 返回前 50 个函数（0:50=offset:count 列表索引，非地址范围） |
-| `list_globals` | `{"queries": "g_"}` | 返回名称含 "g_" 的全局变量 |
-| `imports` | `{"offset": 0, "count": 10}` | 返回前 10 个导入 |
-| `lookup_funcs` | `{"queries": "main"}` | 按名称查找 |
-| `lookup_funcs` | `{"queries": "main, 0x401000"}` | 逗号分隔，两个查询 |
-| `lookup_funcs` | `{"queries": ["sub_401000", "start"]}` | 数组格式 |
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `instance_list` | `{}` | Returns instance list, at least contains the current connection |
+| `instance_current` | `{}` | Returns current instance id, name, binary_path, etc. |
+| `instance_switch` | `{"instance_id": "<valid_id>"}` | Switch succeeds or no error |
+| `instance_info` | `{"instance_id": "<valid_id>"}` | Returns detailed info for that instance |
 
 ---
 
-### 3.4 反汇编与反编译
+### 3.2 Numeric Conversion (No IDA Dependency)
 
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `decompile` | `{"addr": "0x401000"}` | 返回伪代码或 error |
-| `decompile` | `{"addr": "start"}` | 按符号名解析（若存在） |
-| `decompile` | `{"addr": "401000"}` | 十进制地址应能解析 |
-| `decompile` | `{"addr": "invalid_addr_xyz"}` | 返回明确 error，无 crash |
-| `disasm` | `{"addr": "0x401000"}` | 返回汇编行列表 |
-
----
-
-### 3.5 内存读写
-
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `get_bytes` | `{"regions": {"addr": "0x401000", "size": 16}}` | 返回 16 字节 hex |
-| `get_bytes` | `{"regions": [{"addr": "0x401000", "size": 8}, {"addr": "0x402000", "size": 4}]}` | 批量读取 |
-| `get_bytes` | `{"regions": "0x401000:16"}` | 支持 `"addr:size"` 及 `"addr1:size1, addr2:size2"` |
-| `get_int` | `{"queries": {"addr": "0x401000", "ty": "u32le"}}` | 返回整数 |
-| `get_int` | `{"queries": [{"addr": "0x401000", "ty": "i8"}]}` | 有符号 8 位 |
-| `get_string` | `{"addrs": "0x403000"}` | 返回该地址处的字符串 |
-| `get_string` | `{"addrs": "0x403000, 0x403010"}` | 逗号分隔多地址 |
-| `get_global_value` | `{"queries": "global_var_name"}` | 按名称或地址取值 |
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `int_convert` | `{"inputs": "0x41"}` | Returns decimal=65, hex=0x41, ascii="A" |
+| `int_convert` | `{"inputs": ["0x41", "255"]}` | Returns two conversion results |
+| `int_convert` | `{"inputs": {"text": "0x1000", "size": 32}}` | Parses as 32-bit |
+| `int_convert` | `{"inputs": "not_a_number"}` | Returns error, no crash |
+| `int_convert` | `{"inputs": ""}` | Handles empty string correctly |
 
 ---
 
-### 3.6 交叉引用与调用
+### 3.3 Core Queries
 
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `xrefs_to` | `{"addrs": "0x401000"}` | 引用该地址的 xref 列表 |
-| `xrefs_to` | `{"addrs": "0x401000, 0x402000"}` | 多地址 |
-| `xrefs_to` | `{"addrs": ["0x401000"], "limit": 5}` | 最多 5 条 |
-| `callees` | `{"addrs": "0x401000"}` | 该函数调用的目标列表 |
-| `basic_blocks` | `{"addrs": "0x401000"}` | 基本块及后继 |
-
----
-
-### 3.7 搜索
-
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `find_regex` | `{"pattern": "error|fail", "limit": 10}` | 字符串中匹配 |
-| `find_bytes` | `{"patterns": "48 8B ?? ?? ?? ?? ?? ??"}` | 字节模式搜索 |
-| `find_bytes` | `{"patterns": ["48 8B", "FF 15"]}` | 多个模式 |
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `list_funcs` | `{"queries": "main"}` | Returns function list matching "main" |
+| `list_funcs` | `{"queries": {"offset": 0, "count": 5}}` | Returns first 5 functions, includes `data` and `next_offset` |
+| `list_funcs` | `{"queries": ["*", ""]}` | Two queries, second is full list (empty filter) |
+| `list_funcs` | `{"queries": "0:50"}` | Returns first 50 functions (0:50 = offset:count list index, not address range) |
+| `list_globals` | `{"queries": "g_"}` | Returns globals with names containing "g_" |
+| `imports` | `{"offset": 0, "count": 10}` | Returns first 10 imports |
+| `lookup_funcs` | `{"queries": "main"}` | Look up by name |
+| `lookup_funcs` | `{"queries": "main, 0x401000"}` | Comma-separated, two queries |
+| `lookup_funcs` | `{"queries": ["sub_401000", "start"]}` | Array format |
 
 ---
 
-### 3.8 修改操作（谨慎，建议用测试 IDB）
+### 3.4 Disassembly & Decompilation
 
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `set_comments` | `{"items": {"addr": "0x401000", "comment": "test"}}` | 成功或明确 error |
-| `rename` | `{"batch": {}}` | 返回空对象，无 crash |
-| `rename` | `{"batch": {"func": [{"addr": "0x401000", "name": "__test__"}]}}` | 重命名结果 |
-| `patch_asm` | `{"items": {"addr": "0x401000", "asm": "nop"}}` | 汇编补丁 |
-| `define_func` | `{"items": {"addr": "0x401050"}}` | 在指定地址定义函数 |
-
----
-
-### 3.9 类型与结构
-
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `read_struct` | `{"queries": {"addr": "0x403000"}}` | 读取该地址结构 |
-| `search_structs` | `{"filter": "FILE*"}` | 名称匹配的结构 |
-| `declare_type` | `{"decls": "typedef int my_t;"}` | 声明类型 |
-| `infer_types` | `{"addrs": "0x401000"}` | 类型推断 |
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `decompile` | `{"addr": "0x401000"}` | Returns pseudocode or error |
+| `decompile` | `{"addr": "start"}` | Resolves by symbol name (if it exists) |
+| `decompile` | `{"addr": "401000"}` | Decimal address should resolve |
+| `decompile` | `{"addr": "invalid_addr_xyz"}` | Returns clear error, no crash |
+| `disasm` | `{"addr": "0x401000"}` | Returns list of assembly lines |
 
 ---
 
-### 3.10 栈与调试（调试类需 `--unsafe`）
+### 3.5 Memory Read/Write
 
-| 工具 | 测试输入 | 预期 |
-|------|----------|------|
-| `stack_frame` | `{"addrs": "0x401000"}` | 栈帧变量 |
-| `stack_frame` | `{"addrs": "0x401000, 0x402000"}` | 多个函数 |
-
----
-
-## 四、传参异常与数据异常重点检查
-
-### 4.1 类型不匹配
-
-- 传 `str` 给仅接受 `object`/`array` 的参数 → 视实现而定。验证 `get_bytes.regions` 是否支持 `"addr:size"` 字符串及 JSON 字符串
-- 传 `array` 给仅接受 `str` 的参数 → 视实现，或报错或兼容
-
-### 4.2 地址格式
-
-- `0x401000`、`401000`、`0x140001000`（64 位）
-- `sub_401000`、`start`、`main`（符号名）
-- `invalid`、`0xGGGG`（非法）→ 应有明确错误信息
-
-### 4.3 批量参数格式
-
-- 逗号分隔字符串：`"addr1, addr2"`
-- JSON 数组：`["addr1", "addr2"]`
-- 对象数组：`[{"addr": "0x401000", "size": 16}]`
-
-### 4.4 空与边界
-
-- 空字符串 `""`
-- 空数组 `[]`
-- 空对象 `{}`
-- `count=0`、`limit=0`
-- 超大 `count`/`limit`
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `get_bytes` | `{"regions": {"addr": "0x401000", "size": 16}}` | Returns 16 bytes in hex |
+| `get_bytes` | `{"regions": [{"addr": "0x401000", "size": 8}, {"addr": "0x402000", "size": 4}]}` | Batch read |
+| `get_bytes` | `{"regions": "0x401000:16"}` | Supports `"addr:size"` and `"addr1:size1, addr2:size2"` |
+| `get_int` | `{"queries": {"addr": "0x401000", "ty": "u32le"}}` | Returns integer |
+| `get_int` | `{"queries": [{"addr": "0x401000", "ty": "i8"}]}` | Signed 8-bit |
+| `get_string` | `{"addrs": "0x403000"}` | Returns string at that address |
+| `get_string` | `{"addrs": "0x403000, 0x403010"}` | Comma-separated multiple addresses |
+| `get_global_value` | `{"queries": "global_var_name"}` | Get value by name or address |
 
 ---
 
-## 五、执行方式与记录模板
+### 3.6 Cross-References & Calls
 
-**执行方式**：按节 3 逐项调用 MCP 工具，记录：
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `xrefs_to` | `{"addrs": "0x401000"}` | List of xrefs referencing that address |
+| `xrefs_to` | `{"addrs": "0x401000, 0x402000"}` | Multiple addresses |
+| `xrefs_to` | `{"addrs": ["0x401000"], "limit": 5}` | Maximum 5 results |
+| `callees` | `{"addrs": "0x401000"}` | List of call targets from that function |
+| `basic_blocks` | `{"addrs": "0x401000"}` | Basic blocks and successors |
+
+---
+
+### 3.7 Search
+
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `find_regex` | `{"pattern": "error|fail", "limit": 10}` | Matches within strings |
+| `find_bytes` | `{"patterns": "48 8B ?? ?? ?? ?? ?? ??"}` | Byte pattern search |
+| `find_bytes` | `{"patterns": ["48 8B", "FF 15"]}` | Multiple patterns |
+
+---
+
+### 3.8 Modification Operations (Use Caution — Recommend a Test IDB)
+
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `set_comments` | `{"items": {"addr": "0x401000", "comment": "test"}}` | Success or clear error |
+| `rename` | `{"batch": {}}` | Returns empty object, no crash |
+| `rename` | `{"batch": {"func": [{"addr": "0x401000", "name": "__test__"}]}}` | Rename result |
+| `patch_asm` | `{"items": {"addr": "0x401000", "asm": "nop"}}` | Assembly patch |
+| `define_func` | `{"items": {"addr": "0x401050"}}` | Defines function at specified address |
+
+---
+
+### 3.9 Types & Structures
+
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `read_struct` | `{"queries": {"addr": "0x403000"}}` | Reads structure at that address |
+| `search_structs` | `{"filter": "FILE*"}` | Structures matching the name |
+| `declare_type` | `{"decls": "typedef int my_t;"}` | Declares type |
+| `infer_types` | `{"addrs": "0x401000"}` | Type inference |
+
+---
+
+### 3.10 Stack & Debugger (Debugger tools require `--unsafe`)
+
+| Tool | Test Input | Expected |
+|------|-----------|----------|
+| `stack_frame` | `{"addrs": "0x401000"}` | Stack frame variables |
+| `stack_frame` | `{"addrs": "0x401000, 0x402000"}` | Multiple functions |
+
+---
+
+## 4. Parameter & Data Exception Focus Areas
+
+### 4.1 Type Mismatch
+
+- Passing `str` to a parameter that only accepts `object`/`array` → depends on implementation. Verify whether `get_bytes.regions` supports `"addr:size"` strings and JSON strings
+- Passing `array` to a parameter that only accepts `str` → depends on implementation; may error or be handled gracefully
+
+### 4.2 Address Formats
+
+- `0x401000`, `401000`, `0x140001000` (64-bit)
+- `sub_401000`, `start`, `main` (symbol names)
+- `invalid`, `0xGGGG` (illegal) → should return a clear error message
+
+### 4.3 Batch Parameter Formats
+
+- Comma-separated string: `"addr1, addr2"`
+- JSON array: `["addr1", "addr2"]`
+- Object array: `[{"addr": "0x401000", "size": 16}]`
+
+### 4.4 Empty & Boundary Values
+
+- Empty string `""`
+- Empty array `[]`
+- Empty object `{}`
+- `count=0`, `limit=0`
+- Excessively large `count`/`limit`
+
+---
+
+## 5. Execution Method & Recording Template
+
+**Execution method**: Call MCP tools item-by-item per Section 3 and record:
 
 ```
-工具名: ____________
-输入: ____________
-输出/错误: ____________
-结论: ✓ 通过 / ✗ 失败 / ⚠ 异常但可接受
-备注: ____________
+Tool name: ____________
+Input: ____________
+Output/Error: ____________
+Conclusion: ✓ Pass / ✗ Fail / ⚠ Unexpected but acceptable
+Notes: ____________
 ```
 
-**汇总**：在测试结束时整理：
-- 通过 / 失败数量
-- 发现的问题清单（含复现步骤）
-- 建议改进（参数格式、错误提示、schema 文档）
+**Summary**: At the end of testing, compile:
+- Pass / fail counts
+- List of discovered issues (with reproduction steps)
+- Improvement suggestions (parameter formats, error messages, schema documentation)
 
 ---
 
-## 六、快速回归用例（最小集）
+## 6. Quick Regression Test Cases (Minimum Set)
 
-若时间有限，至少执行：
+If time is limited, at minimum execute:
 
 1. `instance_list` + `instance_current`
-2. `int_convert`（str / array / object 各一次）
-3. `list_funcs`（str 与 object 各一次）
-4. `decompile`（有效地址 + 无效地址）
-5. `get_bytes`（object 与 array）
-6. `lookup_funcs`（逗号分隔字符串）
-7. `rename`（空 batch）
-8. `get_bytes` 传 str `"0x401000:16"` 及 JSON 字符串（如 `"[{\"addr\":\"0x401000\",\"size\":16}]"`）→ 应成功返回字节数据
+2. `int_convert` (one each of str / array / object)
+3. `list_funcs` (one each of str and object)
+4. `decompile` (valid address + invalid address)
+5. `get_bytes` (object and array)
+6. `lookup_funcs` (comma-separated string)
+7. `rename` (empty batch)
+8. `get_bytes` with str `"0x401000:16"` and JSON string (e.g., `"[{\"addr\":\"0x401000\",\"size\":16}]"`) → should successfully return byte data
