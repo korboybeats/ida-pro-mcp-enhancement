@@ -1,9 +1,9 @@
-"""IDALib MCP服务器 - Headless模式
+"""IDALib MCP server - Headless mode
 
-支持多实例模式:
-- 使用 --coordinator 参数指定协调服务器地址
-- 启动时自动向协调服务器注册
-- 关闭时自动注销
+Supports multi-instance mode:
+- Use the --coordinator argument to specify the coordinator server address
+- Auto-registers with the coordinator server on start
+- Auto-unregisters on shutdown
 """
 
 import argparse
@@ -346,17 +346,17 @@ def idalib_current() -> IdalibCurrentResult:
         return {"error": f"Failed to get current session: {e}"}
 
 
-# 协调服务器注册状态（可选多实例）
+# Coordinator server registration state (optional multi-instance)
 _coordinator_instance_id: Optional[str] = None
 
 
 def _generate_instance_id(port: int) -> str:
-    """生成实例ID"""
+    """Generate the instance ID"""
     return f"idalib-{port}-{os.getpid()}"
 
 
 def _register_to_coordinator(host: str, port: int, binary_path: str = "") -> bool:
-    """向协调服务器注册此实例（固定端口127.0.0.1:8801）"""
+    """Register this instance with the coordinator server (fixed port 127.0.0.1:8801)"""
     global _coordinator_instance_id
     try:
         from ida_pro_mcp.ida_mcp.api_instances import register_to_coordinator
@@ -371,29 +371,29 @@ def _register_to_coordinator(host: str, port: int, binary_path: str = "") -> boo
             binary_path=binary_path,
         )
         if result.get("success"):
-            logger.info("多实例模式: 已注册到协调服务器 (127.0.0.1:8801)")
+            logger.info("Multi-instance mode: registered with coordinator server (127.0.0.1:8801)")
             return True
         _coordinator_instance_id = None
-        logger.info("单实例模式: 协调服务器未运行 (如需多实例，请先运行 ida-mcp-coordinator)")
+        logger.info("Single-instance mode: coordinator server is not running (for multi-instance, run ida-mcp-coordinator first)")
         return False
     except Exception:
         _coordinator_instance_id = None
-        logger.info("单实例模式: 协调服务器未运行 (如需多实例，请先运行 ida-mcp-coordinator)")
+        logger.info("Single-instance mode: coordinator server is not running (for multi-instance, run ida-mcp-coordinator first)")
         return False
 
 
 def _unregister_from_coordinator():
-    """从协调服务器注销"""
+    """Unregister from the coordinator server"""
     global _coordinator_instance_id
     if _coordinator_instance_id is None:
         return
     try:
         from ida_pro_mcp.ida_mcp.api_instances import unregister_from_coordinator
         unregister_from_coordinator()
-        logger.info("已从协调服务器注销: %s", _coordinator_instance_id)
+        logger.info("Unregistered from coordinator server: %s", _coordinator_instance_id)
         _coordinator_instance_id = None
     except Exception as e:
-        logger.warning("注销时出错: %s", e)
+        logger.warning("Error during unregister: %s", e)
 @tool
 def idalib_save(
     path: Annotated[str, "Optional destination path (default: current IDB path)"] = "",
@@ -617,7 +617,7 @@ def main():
             "No initial binary specified. Use idalib_open() to load binaries dynamically."
         )
 
-    # 尝试注册到协调服务器（固定端口127.0.0.1:8801，如果在线）
+    # Try to register with the coordinator server (fixed port 127.0.0.1:8801, if online)
     _register_to_coordinator(args.host, args.port, binary_path_str)
 
     def cleanup_and_exit(signum, frame):
@@ -667,7 +667,7 @@ def main():
     # NOTE: npx -y @modelcontextprotocol/inspector for debugging
     # TODO: with background=True the main thread does not fake any
     # work from @idasync, so we deadlock.
-    logger.info(f"MCP服务启动: http://{args.host}:{args.port}/mcp")
+    logger.info(f"MCP service started: http://{args.host}:{args.port}/mcp")
     
     MCP_SERVER.serve(host=args.host, port=args.port, background=False)
 

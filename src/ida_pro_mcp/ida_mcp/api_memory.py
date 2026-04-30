@@ -114,10 +114,10 @@ def _normalize_regions(regions: list[MemoryRead] | MemoryRead | str) -> list[Mem
 def get_bytes(
     regions: Annotated[
         list[MemoryRead] | MemoryRead | str,
-        "内存区域。格式: {addr,size}、数组、或字符串'addr:size'(例'0x401000:16'、'0x401000:16, 0x402000:8')。",
+        "Memory regions. Format: {addr, size}, array, or string 'addr:size' (e.g. '0x401000:16', '0x401000:16, 0x402000:8').",
     ],
 ) -> list[BytesReadResult]:
-    """从内存读取原始字节。输入格式: 对象{addr,size}、数组、或字符串'addr:size'(例'0x401000:16'、'0x401000:16, 0x402000:8')。返回 addr,data(hex)。"""
+    """Read raw bytes from memory. Input formats: object {addr, size}, array, or string 'addr:size' (e.g. '0x401000:16', '0x401000:16, 0x402000:8'). Returns addr, data (hex)."""
     regions = _normalize_regions(regions)
     if not regions:
         return []
@@ -179,10 +179,10 @@ def _parse_int_value(text: str, signed: bool, bits: int) -> int:
 def get_int(
     queries: Annotated[
         list[IntRead] | IntRead,
-        "整数读取: {addr,ty}。ty 格式: i8/u8/i16le/i16be/u32le/u64。例: {addr:'0x401000',ty:'u32le'}",
+        "Integer read: {addr, ty}. ty format: i8/u8/i16le/i16be/u32le/u64. Example: {addr:'0x401000', ty:'u32le'}",
     ],
 ) -> list[IntReadResult]:
-    """从指定地址按类型读整数。支持有符号(i)无符号(u)、8/16/32/64位、大小端(le/be)。返回 addr,ty,value。"""
+    """Read integers from given addresses by type. Supports signed (i) / unsigned (u), 8/16/32/64-bit, little/big endian (le/be). Returns addr, ty, value."""
     if isinstance(queries, dict):
         queries = [queries]
 
@@ -214,10 +214,10 @@ def get_int(
 def get_string(
     addrs: Annotated[
         list[str] | str,
-        "地址，支持 hex/十进制/逗号分隔。例: '0x403000' 或 '0x403000, 0x403010'",
+        "Address, supports hex / decimal / comma-separated. Examples: '0x403000' or '0x403000, 0x403010'",
     ],
 ) -> list[StringReadResult]:
-    """从地址读取 IDA 识别的字符串(C/宽字符)。返回 addr,value。若该址无字符串则 error。"""
+    """Read strings recognized by IDA (C / wide-char) from addresses. Returns addr, value. If no string exists at the address, returns error."""
     addrs = normalize_list_input(addrs)
     results = []
 
@@ -284,10 +284,10 @@ def get_global_variable_value_internal(ea: int) -> str:
 def get_global_value(
     queries: Annotated[
         list[str] | str,
-        "全局变量地址或名称。例: '0x403000'、'globalVar'、'isDemoVersion'。按类型解析返回值。",
+        "Global variable address or name. Examples: '0x403000', 'globalVar', 'isDemoVersion'. Returns value parsed per type.",
     ],
 ) -> list[GlobalValueResult]:
-    """按地址或符号名读取全局变量值。自动识别 hex 地址 vs 名称。需 IDA 已定义该全局类型。"""
+    """Read a global variable value by address or symbol name. Auto-detects hex address vs name. Requires the global's type to be defined in IDA."""
     from .utils import looks_like_address
 
     queries = normalize_list_input(queries)

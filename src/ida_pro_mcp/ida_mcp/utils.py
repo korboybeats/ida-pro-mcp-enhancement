@@ -50,8 +50,8 @@ def get_analysis_prompt() -> str | None:
 class MemoryRead(TypedDict):
     """Memory read request"""
 
-    addr: Annotated[str, "地址，支持 0x401000、401000、符号名"]
-    size: Annotated[int, "读取字节数，如 16"]
+    addr: Annotated[str, "Address, supports 0x401000, 401000, or symbol name"]
+    size: Annotated[int, "Number of bytes to read, e.g. 16"]
 
 
 class MemoryPatch(TypedDict):
@@ -64,8 +64,8 @@ class MemoryPatch(TypedDict):
 class IntRead(TypedDict):
     """Integer read request"""
 
-    addr: Annotated[str, "地址，hex 或十进制"]
-    ty: Annotated[str, "类型: i8/u8/i16le/i16be/u32le/u64le 等。i=有符号,u=无符号,le/be=字节序"]
+    addr: Annotated[str, "Address, hex or decimal"]
+    ty: Annotated[str, "Type: i8/u8/i16le/i16be/u32le/u64le, etc. i=signed, u=unsigned, le/be=byte order"]
 
 
 class IntWrite(TypedDict):
@@ -181,9 +181,9 @@ class XrefQuery(TypedDict):
 class ListQuery(TypedDict, total=False):
     """Pagination query for listing operations"""
 
-    filter: Annotated[str, "glob 过滤，如 main、*init*、空=全部"]
-    offset: Annotated[int, "起始索引，默认 0"]
-    count: Annotated[int, "返回数量，默认 50，0=全部"]
+    filter: Annotated[str, "glob filter, e.g. main, *init*, empty=all"]
+    offset: Annotated[int, "Start index, default 0"]
+    count: Annotated[int, "Number to return, default 50, 0=all"]
 
 
 class FunctionQuery(TypedDict, total=False):

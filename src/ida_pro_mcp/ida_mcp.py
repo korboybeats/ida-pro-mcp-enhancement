@@ -1,7 +1,7 @@
-"""IDA Pro MCP Plugin Loader（HTTP+SSE 版本）
+"""IDA Pro MCP Plugin Loader (HTTP+SSE version)
 
-通过 HTTP+SSE 与 MCP 服务器通信。
-插件加载时自动连接，按 Ctrl+Alt+M 可手动重连。
+Communicates with the MCP server via HTTP+SSE.
+Auto-connects when the plugin loads; press Ctrl+Alt+M to manually reconnect.
 """
 
 import os
@@ -27,12 +27,12 @@ def unload_package(package_name: str):
 
 
 def _generate_instance_id() -> str:
-    """生成实例 ID，基于进程 ID"""
+    """Generate the instance ID, based on the process ID."""
     return f"ida-{os.getpid()}"
 
 
 def _get_current_binary_path() -> str:
-    """获取当前打开的二进制文件路径"""
+    """Get the path of the currently opened binary file."""
     try:
         return idc.get_input_file_path() or ""
     except Exception:
@@ -40,7 +40,7 @@ def _get_current_binary_path() -> str:
 
 
 def _get_current_idb_path() -> str:
-    """获取当前 IDB 数据库路径（.idb/.i64）。用于在旁路生成 SQLite 缓存文件。"""
+    """Get the current IDB database path (.idb/.i64). Used to generate the SQLite cache file alongside it."""
     try:
         return idc.get_idb_path() or ""
     except Exception:
@@ -48,22 +48,22 @@ def _get_current_idb_path() -> str:
 
 
 def _get_current_binary_name() -> str:
-    """获取当前打开的二进制文件名"""
+    """Get the name of the currently opened binary file."""
     path = _get_current_binary_path()
     return os.path.basename(path) if path else ""
 
 
 def _get_arch_info() -> dict:
-    """获取当前二进制文件的架构信息"""
+    """Get the architecture info of the currently opened binary file."""
     try:
         import ida_ida
-        
+
         proc_name = ida_ida.inf_get_procname() if hasattr(ida_ida, 'inf_get_procname') else ""
         is_64bit = ida_ida.inf_is_64bit() if hasattr(ida_ida, 'inf_is_64bit') else False
         bitness = 64 if is_64bit else 32
         is_be = ida_ida.inf_is_be() if hasattr(ida_ida, 'inf_is_be') else False
         endian = "big" if is_be else "little"
-        
+
         file_type = ida_ida.inf_get_filetype() if hasattr(ida_ida, 'inf_get_filetype') else 0
         file_type_names = {
             0: "unknown", 1: "EXE", 2: "COM", 3: "BIN", 4: "DRV", 5: "WIN",
@@ -74,7 +74,7 @@ def _get_arch_info() -> dict:
         }
         file_type_str = file_type_names.get(file_type, f"type_{file_type}")
         base_addr = hex(idaapi.get_imagebase())
-        
+
         return {
             "processor": proc_name,
             "bitness": bitness,
@@ -95,7 +95,7 @@ class MCP(idaapi.plugin_t):
 
     def init(self):
         self._connected = False
-        self._connecting = False  # 正在连接中标志，防止重复连接
+        self._connecting = False  # connecting-in-progress flag, prevents duplicate connections
         self._mcp_server = None
         self._auto_connect_tried = False
         self._idb_path_for_cache = ""
@@ -110,24 +110,24 @@ class MCP(idaapi.plugin_t):
         return idaapi.PLUGIN_KEEP
 
     def run(self, arg):
-        """手动连接/重连（Ctrl+Alt+M）"""
+        """Manual connect/reconnect (Ctrl+Alt+M)"""
         self._try_connect(silent=False)
 
     def _try_connect(self, silent: bool = False):
-        """尝试连接到 MCP 服务器（后台线程执行，不阻塞 UI）"""
+        """Try to connect to the MCP server (executed on a background thread, does not block the UI)"""
         if self._connecting:
             if not silent:
-                print("[MCP] 正在连接中，请稍候...")
+                print("[MCP] Connection already in progress, please wait...")
             return
-        
+
         if self._connected:
             self._disconnect()
-        
+
         self._connecting = True
-        
-        # 在 UI 线程准备参数
+
+        # Prepare parameters on the UI thread
         unload_package("ida_mcp")
-        
+
         if TYPE_CHECKING:
             from .ida_mcp import (
                 MCP_SERVER,
@@ -153,11 +153,11 @@ class MCP(idaapi.plugin_t):
         binary_name = _get_current_binary_name()
         idb_path = _get_current_idb_path()
         arch_info = _get_arch_info()
-        # 将 idb_path 塞入 arch_info，注册到 Broker 后外部即可定位 .mcp.sqlite 缓存文件。
+        # Stuff idb_path into arch_info; once registered with the Broker, external code can locate the .mcp.sqlite cache file.
         if idb_path:
             arch_info["idb_path"] = idb_path
 
-        # 启动 SQLite 静态缓存后台守护线程（实现位于 broker 子目录，按 IDA 插件加载惯例走绝对 import）
+        # Start the SQLite static cache background daemon thread (implementation lives in the broker subdirectory; per IDA plugin loading convention we use absolute imports)
         if idb_path:
             try:
                 if TYPE_CHECKING:
@@ -167,17 +167,18 @@ class MCP(idaapi.plugin_t):
                 _mcp_sqlite_cache.start_cache_daemon(idb_path)
                 self._idb_path_for_cache = idb_path
             except Exception as _e:
-                print(f"[MCP] SQLite 缓存守护线程启动失败: {_e}")
+                print(f"[MCP] SQLite cache daemon thread failed to start: {_e}")
                 self._idb_path_for_cache = ""
         else:
             self._idb_path_for_cache = ""
 
         def handle_mcp_request(request: dict) -> dict:
-            """处理来自服务器的 MCP 请求。
+            """Handle MCP requests from the server.
 
-            先拦截缓存类工具 (find_regex / entity_query / list_funcs /
-            list_globals / imports / refresh_cache / cache_status)，
-            直接用本地 SQLite 响应，不进入 ida_mcp 正常分发，不占 IDA 主线程。
+            First intercepts cache tools (find_regex / entity_query / list_funcs /
+            list_globals / imports / refresh_cache / cache_status) and responds
+            directly with local SQLite, bypassing the normal ida_mcp dispatch and
+            not occupying the IDA main thread.
             """
             from typing import cast as _cast
             if TYPE_CHECKING:
@@ -202,10 +203,10 @@ class MCP(idaapi.plugin_t):
             return dict(out)
 
         if not silent:
-            print("[MCP] 正在连接到 MCP 服务器...")
+            print("[MCP] Connecting to MCP server...")
 
         def do_connect():
-            """后台线程执行连接"""
+            """Perform the connection on a background thread"""
             try:
                 success = connect_to_server(
                     instance_id=instance_id,
@@ -220,19 +221,19 @@ class MCP(idaapi.plugin_t):
                     self._connecting = False
                     if success:
                         self._connected = True
-                        print(f"[MCP] 已连接 ({binary_name or 'IDA'})")
+                        print(f"[MCP] Connected ({binary_name or 'IDA'})")
                     else:
                         if silent:
-                            print("[MCP] 自动连接失败，按 Ctrl+Alt+M 手动重试")
+                            print("[MCP] Auto-connect failed, press Ctrl+Alt+M to retry manually")
                         else:
-                            print("[MCP] 连接失败，请确保 Cursor 已启动")
+                            print("[MCP] Connection failed, please make sure Cursor is running")
                     return -1
 
                 idaapi.execute_sync(lambda: update_status(), idaapi.MFF_WRITE)
             except Exception as e:
                 def report_error():
                     self._connecting = False
-                    print(f"[MCP] 连接异常: {e}")
+                    print(f"[MCP] Connection exception: {e}")
                     return -1
                 idaapi.execute_sync(lambda: report_error(), idaapi.MFF_WRITE)
 
@@ -240,7 +241,7 @@ class MCP(idaapi.plugin_t):
         thread.start()
 
     def _disconnect(self):
-        """断开与服务器的连接"""
+        """Disconnect from the server"""
         if not self._connected:
             return
 
@@ -255,7 +256,7 @@ class MCP(idaapi.plugin_t):
         except Exception:
             pass
 
-        # 顺带停止该 IDB 对应的 SQLite 缓存守护线程
+        # Also stop the SQLite cache daemon thread for that IDB
         target = getattr(self, "_idb_path_for_cache", "") or ""
         if target:
             try:

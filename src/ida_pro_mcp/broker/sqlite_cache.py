@@ -1,13 +1,17 @@
-"""IDA 静态信息 SQLite 持久化缓存
+"""IDA static-information SQLite persistent cache
 
-设计目标:
-- 在 IDA 插件进程中运行后台守护线程，空闲时全量提取 IDA 数据库中的静态信息
-  (strings, functions, globals, imports 及其 xref) 持久化到 SQLite 数据库。
-- 数据库文件与 IDB 文件同目录、同名，后缀附加 `.mcp.sqlite`，
-  这样同一个 IDB 第二次打开可以"秒开" (不需要重新拉取一遍)。
-- 对外 (broker/manager 拦截器) 只提供只读查询接口，不与 IDA 主线程竞争。
+Design goals:
+- Run a background daemon thread inside the IDA plugin process; while idle,
+  fully extract the static information (strings, functions, globals, imports
+  and their xrefs) from the IDA database and persist it to a SQLite database.
+- The database file lives in the same directory as the IDB and shares its
+  name, with the suffix `.mcp.sqlite` appended, so that the second time the
+  same IDB is opened it loads "instantly" (no need to re-pull everything).
+- For external callers (broker/manager interceptors), only a read-only query
+  interface is exposed, so we don't compete with the IDA main thread.
 
-所有实现都放在 broker 层, 不侵入上游 ida_mcp 目录下的代码。
+All the implementation lives in the broker layer and does not invade the
+upstream ida_mcp directory.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 # ============================================================================
-# SQLite 数据库 Schema
+# SQLite database schema
 # ============================================================================
 
 SCHEMA_VERSION = 1
@@ -94,15 +98,16 @@ CREATE INDEX IF NOT EXISTS idx_imports_module ON imports(module);
 
 
 # ============================================================================
-# 辅助: 数据库路径解析
+# Helpers: database path resolution
 # ============================================================================
 
 
 def resolve_cache_path(idb_path: str) -> Optional[str]:
-    """根据 IDB 路径计算缓存数据库路径。
+    """Compute the cache database path from the IDB path.
 
-    规则: `xxx.i64` -> `xxx.i64.mcp.sqlite`
-    这样数据库文件名和 IDB 同步，客户端下次打开同一 IDB 可秒级加载。
+    Rule: `xxx.i64` -> `xxx.i64.mcp.sqlite`
+    This way the database file name stays in sync with the IDB, so the next
+    time the client opens the same IDB it can load it in seconds.
     """
     if not idb_path:
         return None
@@ -110,14 +115,15 @@ def resolve_cache_path(idb_path: str) -> Optional[str]:
 
 
 # ============================================================================
-# 数据库连接辅助
+# Database connection helpers
 # ============================================================================
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
-    """打开/创建数据库连接，启用 WAL + FK。
+    """Open/create a database connection with WAL + FK enabled.
 
-    WAL 模式允许单写多读，即使 IDA 正在写入缓存，broker 也能继续高速查询。
+    WAL mode allows a single writer with multiple readers, so even while IDA
+    is writing the cache, the broker can still query at high speed.
     """
     conn = sqlite3.connect(db_path, timeout=10.0, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -141,10 +147,11 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 
 # ============================================================================
-# IDA 端: 空闲探测 + 全量提取 + 批量写入
+# IDA side: idle detection + full extraction + bulk write
 #
-# 所有使用 idaapi / idautils / idc 的代码都必须在 IDA 主线程上调用。
-# 我们把"探测空闲"和"提取数据"都封装成可被 execute_sync 调度的小函数。
+# Any code that uses idaapi / idautils / idc must be invoked on the IDA main
+# thread. We wrap both "idle detection" and "data extraction" as small
+# functions that can be scheduled via execute_sync.
 # ============================================================================
 
 
@@ -160,7 +167,7 @@ class CacheStats:
 
 
 def _ida_is_idle() -> bool:
-    """在主线程检查 IDA 是否处于 idle (auto_analysis_ready && hexrays_ready)."""
+    """On the main thread, check whether IDA is idle (auto_analysis_ready && hexrays_ready)."""
     try:
         import ida_auto
         import ida_hexrays
@@ -176,7 +183,7 @@ def _ida_is_idle() -> bool:
 
 
 def _collect_all_data() -> dict:
-    """在主线程收集五大类静态信息。耗时与 IDB 大小成正比。"""
+    """Collect the five categories of static information on the main thread. Time scales with IDB size."""
     import idaapi
     import idautils
     import idc
@@ -275,7 +282,7 @@ def _collect_all_data() -> dict:
 
 
 def _write_data_to_db(db_path: str, data: dict) -> CacheStats:
-    """批量事务写入。写入前清空所有业务表。"""
+    """Bulk transactional write. Clears all business tables before writing."""
     stats = CacheStats()
     t0 = time.perf_counter()
     conn = _connect(db_path)
@@ -332,12 +339,12 @@ def _write_data_to_db(db_path: str, data: dict) -> CacheStats:
 
 
 # ============================================================================
-# 后台守护线程
+# Background daemon thread
 # ============================================================================
 
 
-REFRESH_INTERVAL_SEC = 30 * 60  # 30 分钟兜底轮询
-IDLE_POLL_SEC = 2.0  # 未就绪时的快速探测节奏
+REFRESH_INTERVAL_SEC = 30 * 60  # 30-minute fallback poll
+IDLE_POLL_SEC = 2.0  # Fast poll cadence while not yet ready
 
 
 @dataclass
@@ -358,9 +365,9 @@ _daemons_lock = threading.Lock()
 
 
 def _execute_in_ida_main(fn):
-    """把函数派发到 IDA 主线程并同步拿回返回值。
+    """Dispatch a function to the IDA main thread and synchronously get the return value back.
 
-    依赖 ida_kernwin.execute_sync(..., MFF_READ)。失败时返回 None。
+    Relies on ida_kernwin.execute_sync(..., MFF_READ). Returns None on failure.
     """
     import ida_kernwin
 
@@ -393,7 +400,7 @@ def _run_build_once(handle: _DaemonHandle) -> None:
         except OSError:
             pass
         print(
-            f"[MCP][cache] 写入完成 {handle.db_path}: "
+            f"[MCP][cache] Write completed {handle.db_path}: "
             f"strings={stats.strings} ({stats.string_xrefs} xrefs), "
             f"functions={stats.functions} ({stats.function_xrefs} xrefs), "
             f"globals={stats.globals_}, imports={stats.imports}, "
@@ -402,26 +409,28 @@ def _run_build_once(handle: _DaemonHandle) -> None:
         )
     except Exception as e:  # noqa: BLE001
         handle.last_error = str(e)
-        print(f"[MCP][cache] 构建失败: {e}", file=sys.stderr)
+        print(f"[MCP][cache] Build failed: {e}", file=sys.stderr)
 
 
 def _daemon_loop(handle: _DaemonHandle) -> None:
-    """守护线程主循环。
+    """Daemon thread main loop.
 
-    算法:
-    1. 一直 poll IDA idle 状态，就绪后执行一次全量构建。
-    2. 然后按 5 分钟周期循环；每次周期到点仍会再次检查 idle 后才构建。
-    3. force_event 允许外部 (refresh_cache 工具) 立即唤醒。
+    Algorithm:
+    1. Continuously poll IDA's idle state; once ready, run a full build.
+    2. Then loop on a 5-minute cycle; each time the cycle hits, idle is
+       re-checked before building.
+    3. force_event lets external callers (the refresh_cache tool) wake it
+       up immediately.
     """
-    # 首次构建 - 等待 idle
-    print(f"[MCP][cache] 守护线程启动，目标数据库: {handle.db_path}", file=sys.stderr)
+    # First build - wait for idle
+    print(f"[MCP][cache] Daemon thread started, target database: {handle.db_path}", file=sys.stderr)
     try:
         _ensure_meta_building(handle.db_path)
     except Exception as e:  # noqa: BLE001
-        print(f"[MCP][cache] 初始化数据库失败: {e}", file=sys.stderr)
+        print(f"[MCP][cache] Database initialization failed: {e}", file=sys.stderr)
         return
 
-    # 1. 等待 idle 后首次构建
+    # 1. Wait for idle, then do the first build
     while not handle.stop_event.is_set():
         try:
             idle = _execute_in_ida_main(_ida_is_idle)
@@ -432,20 +441,20 @@ def _daemon_loop(handle: _DaemonHandle) -> None:
             break
         handle.stop_event.wait(IDLE_POLL_SEC)
 
-    # 2. 周期性 / 被动刷新（mtime 驱动：IDB 未变化则跳过重建）
+    # 2. Periodic / passive refresh (mtime-driven: skip rebuild if IDB hasn't changed)
     while not handle.stop_event.is_set():
         triggered = handle.force_event.wait(REFRESH_INTERVAL_SEC)
         if handle.stop_event.is_set():
             break
         handle.force_event.clear()
-        # 非 force 触发时，检查 IDB mtime，无变化则跳过
+        # When not force-triggered, check IDB mtime; skip if unchanged
         if not triggered:
             try:
                 mtime = os.path.getmtime(handle.idb_path)
             except OSError:
                 mtime = 0.0
             if mtime == handle.last_idb_mtime:
-                print(f"[MCP][cache] IDB 未变化，跳过重建: {handle.idb_path}", file=sys.stderr)
+                print(f"[MCP][cache] IDB unchanged, skipping rebuild: {handle.idb_path}", file=sys.stderr)
                 continue
         while not handle.stop_event.is_set():
             try:
@@ -459,11 +468,12 @@ def _daemon_loop(handle: _DaemonHandle) -> None:
 
 
 def _ensure_meta_building(db_path: str) -> None:
-    """首次打开/新建数据库时写入 status=building，用于外部拦截器判断。
+    """On first open / new database, write status=building so external interceptors can check it.
 
-    如果数据库已存在且 status 已经是 ready，则保留 ready。
-    这就是"秒开"：同一 IDB 第二次打开时缓存文件已存在，Broker 拦截立即生效，
-    后台守护线程只需要在 idle 后做一次覆盖刷新。
+    If the database already exists and status is already ready, ready is preserved.
+    This is the "instant load": the second time the same IDB is opened the cache file
+    already exists, the Broker's interception takes effect immediately, and the
+    background daemon thread only needs to do an overwrite refresh once it sees idle.
     """
     conn = _connect(db_path)
     try:
@@ -478,7 +488,7 @@ def _ensure_meta_building(db_path: str) -> None:
 
 
 def _make_idb_save_hook(handle: _DaemonHandle):
-    """在 IDA 主线程中创建并注册 IDB_Hooks 子类实例。"""
+    """Create and register an IDB_Hooks subclass instance on the IDA main thread."""
     import ida_idp
 
     class _Hook(ida_idp.IDB_Hooks):
@@ -492,10 +502,11 @@ def _make_idb_save_hook(handle: _DaemonHandle):
 
 
 def start_cache_daemon(idb_path: str) -> Optional[str]:
-    """启动与指定 IDB 关联的 SQLite 缓存后台守护线程。
+    """Start the SQLite cache background daemon thread associated with the given IDB.
 
-    返回最终使用的数据库路径 (可能为 None 如果 idb_path 为空)。
-    重复调用幂等: 若同一 idb_path 的守护线程已在运行则返回已有路径。
+    Returns the database path eventually used (may be None if idb_path is empty).
+    Repeated calls are idempotent: if a daemon thread for the same idb_path is already
+    running, the existing path is returned.
     """
     db_path = resolve_cache_path(idb_path)
     if not db_path:
@@ -525,7 +536,7 @@ def start_cache_daemon(idb_path: str) -> Optional[str]:
         try:
             handle.idb_hook = _make_idb_save_hook(handle)
         except Exception as e:
-            print(f"[MCP][cache] IDB_Hooks 注册失败: {e}", file=sys.stderr)
+            print(f"[MCP][cache] IDB_Hooks registration failed: {e}", file=sys.stderr)
         _daemons[idb_path] = handle
         thread.start()
 
@@ -533,7 +544,7 @@ def start_cache_daemon(idb_path: str) -> Optional[str]:
 
 
 def request_refresh(idb_path: str) -> bool:
-    """唤醒指定 IDB 对应的守护线程立即进行一次刷新。"""
+    """Wake the daemon thread for the specified IDB to immediately perform a refresh."""
     with _daemons_lock:
         handle = _daemons.get(idb_path)
     if handle is None:
@@ -543,10 +554,10 @@ def request_refresh(idb_path: str) -> bool:
 
 
 def stop_cache_daemon(idb_path: str) -> None:
-    """停止指定守护线程并清理状态。"""
+    """Stop the specified daemon thread and clean up its state."""
     with _daemons_lock:
         handle = _daemons.pop(idb_path, None)
     if handle is None:
         return
     handle.stop_event.set()
-    handle.force_event.set()  # 唤醒等待
+    handle.force_event.set()  # wake up waiters

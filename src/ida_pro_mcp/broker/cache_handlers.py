@@ -1,13 +1,15 @@
-"""IDA 插件进程的"客户端 MCP 接管层"
+"""IDA plugin process "client-side MCP interception layer"
 
-当 Broker 把 `tools/call` 请求转发到 IDA 后，这一层在 ida_mcp 正常
-`MCP_SERVER.registry.dispatch` 之前做拦截：
+After the Broker forwards a `tools/call` request to IDA, this layer
+intercepts it before ida_mcp's normal `MCP_SERVER.registry.dispatch`:
 
-- 如果目标工具在 `CACHE_TOOL_NAMES` 集合里，改由本模块直接读本地
-  `.mcp.sqlite` 缓存并构造响应 (完全不占用 IDA 主线程)。
-- 未就绪 / 数据库缺失时直接返回 JSON-RPC error，不 fallback。
+- If the target tool is in the `CACHE_TOOL_NAMES` set, this module reads
+  the local `.mcp.sqlite` cache directly and constructs the response
+  (without occupying the IDA main thread at all).
+- If the cache is not ready / the database is missing, a JSON-RPC error
+  is returned directly with no fallback.
 
-所有签名都是严格类型化的，返回 `JsonRpcResponse`。
+All signatures are strictly typed and return `JsonRpcResponse`.
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ from .cache_types import (
 
 
 # ---------------------------------------------------------------------------
-# 常量
+# Constants
 # ---------------------------------------------------------------------------
 
 CACHE_TOOL_NAMES: frozenset[str] = frozenset(
@@ -64,7 +66,7 @@ _VALID_ENTITY_KINDS: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
-# JSON-RPC 封装
+# JSON-RPC wrappers
 # ---------------------------------------------------------------------------
 
 
@@ -83,7 +85,7 @@ def _wrap_err(req_id: JsonRpcId, code: int, message: str) -> JsonRpcResponse:
 
 
 # ---------------------------------------------------------------------------
-# 参数解析工具
+# Argument parsing helpers
 # ---------------------------------------------------------------------------
 
 
@@ -128,7 +130,7 @@ def _bool_or(args: Mapping[str, Any], key: str, default: bool) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 各工具 handler (强类型)
+# Per-tool handlers (strongly-typed)
 # ---------------------------------------------------------------------------
 
 
@@ -193,14 +195,14 @@ def _do_cache_status(_args: CacheStatusArgs, db_path: str) -> CacheStatusResult:
 
 
 # ---------------------------------------------------------------------------
-# 主入口
+# Main entry point
 # ---------------------------------------------------------------------------
 
 
 def handle_cache_tool_locally(req: JsonRpcRequest, idb_path: str) -> JsonRpcResponse:
-    """在 IDA 插件进程内部，直接用 SQLite 响应缓存类工具。
+    """Inside the IDA plugin process, respond to cache-class tools directly using SQLite.
 
-    调用前请先用 `is_cache_tool()` / `CACHE_TOOL_NAMES` 判断。
+    Before calling, check first via `is_cache_tool()` / `CACHE_TOOL_NAMES`.
     """
     req_id: JsonRpcId = req.get("id")
     tool_name = _get_tool_name(req)
@@ -210,18 +212,18 @@ def handle_cache_tool_locally(req: JsonRpcRequest, idb_path: str) -> JsonRpcResp
         return _wrap_err(
             req_id,
             -32000,
-            "当前 IDA 实例未提供 idb_path，无法定位本地 SQLite 缓存。",
+            "The current IDA instance did not provide idb_path; cannot locate the local SQLite cache.",
         )
 
     db_path = _query.get_cache_path_for_binary(idb_path)
     if not db_path:
-        return _wrap_err(req_id, -32000, "无法根据 idb_path 推导缓存数据库路径。")
+        return _wrap_err(req_id, -32000, "Cannot derive cache database path from idb_path.")
 
     try:
         if tool_name == "find_regex":
             pattern = raw_args.get("pattern") or raw_args.get("regex")
             if not isinstance(pattern, str) or not pattern:
-                return _wrap_err(req_id, -32602, "find_regex 需要 pattern 参数 (str)。")
+                return _wrap_err(req_id, -32602, "find_regex requires a pattern argument (str).")
             fr_args: FindRegexArgs = {
                 "instance_id": str(raw_args.get("instance_id", "")),
                 "pattern": pattern,
@@ -240,7 +242,7 @@ def handle_cache_tool_locally(req: JsonRpcRequest, idb_path: str) -> JsonRpcResp
                 return _wrap_err(
                     req_id,
                     -32602,
-                    "entity_query 需要 kind 参数 (strings/functions/globals/imports)。",
+                    "entity_query requires a kind argument (strings/functions/globals/imports).",
                 )
             kind = cast(EntityKind, kind_raw)
             eq_args: EntityQueryArgs = {
@@ -320,13 +322,13 @@ def handle_cache_tool_locally(req: JsonRpcRequest, idb_path: str) -> JsonRpcResp
     except _query.CacheNotReadyError as e:
         return _wrap_err(req_id, -32001, str(e))
     except Exception as e:  # noqa: BLE001
-        return _wrap_err(req_id, -32603, f"SQLite 缓存查询失败: {e}")
+        return _wrap_err(req_id, -32603, f"SQLite cache query failed: {e}")
 
-    return _wrap_err(req_id, -32601, f"未知缓存工具: {tool_name!r}")
+    return _wrap_err(req_id, -32601, f"Unknown cache tool: {tool_name!r}")
 
 
 def is_cache_tool(req: JsonRpcRequest) -> bool:
-    """请求是否命中缓存拦截名单。"""
+    """Whether the request hits the cache interception list."""
     if req.get("method") != "tools/call":
         return False
     return _get_tool_name(req) in CACHE_TOOL_NAMES

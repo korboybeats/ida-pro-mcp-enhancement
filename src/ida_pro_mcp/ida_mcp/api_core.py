@@ -408,12 +408,12 @@ def server_warmup(
 def lookup_funcs(
     queries: Annotated[
         list[str] | list[dict] | str,
-        "函数地址或名称。支持: 字符串'0x401000'、逗号分隔'main, start'、数组['0x401000','main']、或对象数组[{'addr':'0x401000'}]。",
+        "Function address or name. Supports: string '0x401000', comma-separated 'main, start', array ['0x401000','main'], or object array [{'addr':'0x401000'}].",
     ],
 ) -> list[LookupFuncResult]:
-    """按地址或名称查找函数。输入: 地址(0x401000/sub_401000)或符号名(main,start)。输出: addr,name,size。支持批量。"""
+    """Look up functions by address or name. Input: address (0x401000/sub_401000) or symbol name (main, start). Output: addr, name, size. Supports batch."""
     raw = normalize_list_input(queries) if isinstance(queries, (list, str)) else [queries]
-    # 支持 [{"addr": "0x401000"}, ...] 格式，统一转为字符串列表
+    # Supports [{"addr": "0x401000"}, ...] format, normalized to a string list
     queries = [
         (q.get("addr") or q.get("name") or str(q)) if isinstance(q, dict) else str(q)
         for q in raw
@@ -458,10 +458,10 @@ def lookup_funcs(
 def int_convert(
     inputs: Annotated[
         list[NumberConversion] | NumberConversion | str,
-        "要转换的数: 字符串'0x41'/'255'、数组['0x41','255']、对象{'text':'0x1000','size':32}。输出 decimal/hex/ascii/binary。LLM 切勿自行做进制转换，请用此工具。",
+        "Numbers to convert: string '0x41'/'255', array ['0x41','255'], object {'text':'0x1000','size':32}. Outputs decimal/hex/ascii/binary. The LLM must not perform base conversion manually; use this tool.",
     ],
 ) -> list[IntConvertResult]:
-    """数值进制转换。输入任意格式数(0x/十进制)，输出 decimal/hex/ascii/binary。禁止 LLM 手算进制，必须调用此工具。"""
+    """Numeric base conversion. Input any number format (0x/decimal), outputs decimal/hex/ascii/binary. The LLM must not compute bases manually; this tool must be called."""
     inputs = normalize_dict_list(inputs, lambda s: {"text": s, "size": 64})
 
     results = []
@@ -528,10 +528,10 @@ def int_convert(
 def list_funcs(
     queries: Annotated[
         list[ListQuery] | ListQuery | str,
-        "查询: glob过滤'main'、分页简写'0:50'(表示从第0个起取50个，非地址范围)、对象{filter,offset,count}。",
+        "Query: glob filter 'main', pagination shorthand '0:50' (take 50 starting at index 0, not an address range), object {filter, offset, count}.",
     ],
 ) -> list[Page[Function]]:
-    """列出函数。支持 glob 过滤、分页。'0:50'=offset:count（列表索引，非地址）。"""
+    """List functions. Supports glob filtering and pagination. '0:50' = offset:count (list index, not address)."""
     try:
         from .utils import parse_list_query
         queries = normalize_dict_list(queries, parse_list_query)
@@ -642,10 +642,10 @@ def func_query(
 def list_globals(
     queries: Annotated[
         list[ListQuery] | ListQuery | str,
-        "查询: glob'g_'、分页'0:20'(offset:count 列表索引，非地址)、对象{filter,offset,count}。",
+        "Query: glob 'g_', pagination '0:20' (offset:count list index, not address), object {filter, offset, count}.",
     ],
 ) -> list[Page[Global]]:
-    """列出全局变量。支持 glob 过滤、分页。'0:20'=offset:count（列表索引，非地址）。"""
+    """List global variables. Supports glob filtering and pagination. '0:20' = offset:count (list index, not address)."""
     try:
         from .utils import parse_list_query
         queries = normalize_dict_list(queries, parse_list_query)
@@ -780,10 +780,10 @@ def entity_query(
 @tool
 @idasync
 def imports(
-    offset: Annotated[int, "起始索引，从 0 开始"],
-    count: Annotated[int, "返回数量，0 表示全部"],
+    offset: Annotated[int, "Starting index, 0-based"],
+    count: Annotated[int, "Number to return, 0 means all"],
 ) -> Page[Import]:
-    """列出导入表。返回 addr, imported_name, module。用于查动态链接/API 调用。"""
+    """List the import table. Returns addr, imported_name, module. Used to inspect dynamic links/API calls."""
     return paginate(_collect_imports(), offset, count)
 
 
@@ -842,11 +842,11 @@ def idb_save(
 @tool
 @idasync
 def find_regex(
-    pattern: Annotated[str, "正则表达式，在 IDA 识别的字符串中搜索。例: 'error|fail'、'password'"],
+    pattern: Annotated[str, "Regular expression, searched against strings recognized by IDA. Examples: 'error|fail', 'password'"],
     limit: Annotated[int, "Max matches (default: 30, max: 500)"] = 30,
     offset: Annotated[int, "Skip first N matches (default: 0)"] = 0,
 ) -> FindRegexResult:
-    """在二进制字符串中按正则搜索。返回 addr,string。不区分大小写。用于找硬编码字符串。"""
+    """Search binary strings via regex. Returns addr, string. Case-insensitive. Used to find hard-coded strings."""
     if limit <= 0:
         limit = 30
     if limit > 500:

@@ -1,6 +1,7 @@
-"""Broker HTTP 客户端
+"""Broker HTTP client
 
-MCP 进程通过此模块请求 Broker（实例列表、当前实例、转发 IDA 请求）。
+The MCP process uses this module to talk to the Broker (instance list,
+current instance, forwarding IDA requests).
 """
 
 import json
@@ -10,7 +11,7 @@ from typing import Any, Optional
 
 
 class BrokerClient:
-    """Broker HTTP 客户端"""
+    """Broker HTTP client"""
 
     def __init__(self, base_url: str = "http://127.0.0.1:13337", timeout: float = 10.0):
         self.base_url = base_url.rstrip("/")
@@ -39,7 +40,7 @@ class BrokerClient:
                 raw = resp.read().decode("utf-8")
                 return json.loads(raw) if raw else None
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as e:
-            print(f"[MCP] Broker 请求失败 {path}: {e}", file=__import__("sys").stderr)
+            print(f"[MCP] Broker request failed {path}: {e}", file=__import__("sys").stderr)
             return None
 
     def list_instances(self) -> list[dict]:
@@ -53,7 +54,7 @@ class BrokerClient:
         instance_id: Optional[str] = None,
         timeout: float = 60.0,
     ) -> Optional[dict]:
-        """POST /api/request，返回 IDA 响应"""
+        """POST /api/request, returns the IDA response"""
         payload = {"request": request, "timeout": timeout}
         if instance_id is not None:
             payload["instance_id"] = instance_id
@@ -63,5 +64,5 @@ class BrokerClient:
         return out.get("response")
 
     def has_instances(self) -> bool:
-        """是否有已连接实例"""
+        """Whether there is a connected instance"""
         return len(self.list_instances()) > 0

@@ -1,6 +1,6 @@
-"""IDA Pro MCP 安装工具
+"""IDA Pro MCP install tool
 
-安装 IDA 插件和 MCP 客户端配置。
+Installs the IDA plugin and MCP client config.
 """
 
 import os
@@ -15,13 +15,13 @@ import tomli_w
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 IDA_PLUGIN_PKG = os.path.join(SCRIPT_DIR, "ida_mcp")
 IDA_PLUGIN_LOADER = os.path.join(SCRIPT_DIR, "ida_mcp.py")
-# broker/ 内含 SQLite 静态缓存守护线程、查询、拦截器、类型声明等纯代码文件，
-# 在 IDA 插件进程里同样需要，所以和 ida_mcp/ 一起铺到 IDA plugins 目录。
+# broker/ contains pure-code files such as the SQLite static cache daemon thread, queries, interceptors, and type declarations,
+# which are also needed inside the IDA plugin process, so it is laid down into the IDA plugins directory together with ida_mcp/.
 IDA_BROKER_PKG = os.path.join(SCRIPT_DIR, "broker")
 
 
 def get_python_executable():
-    """获取 Python 可执行文件路径"""
+    """Get the path to the Python executable"""
     venv = os.environ.get("VIRTUAL_ENV")
     if venv:
         if sys.platform == "win32":
@@ -34,7 +34,7 @@ def get_python_executable():
 
 
 def copy_python_env(env: dict[str, str]):
-    """复制 Python 环境变量"""
+    """Copy Python environment variables"""
     python_vars = [
         "PYTHONHOME", "PYTHONPATH", "PYTHONSAFEPATH",
         "PYTHONPLATLIBDIR", "PYTHONPYCACHEPREFIX",
@@ -50,7 +50,7 @@ def copy_python_env(env: dict[str, str]):
 
 
 def generate_mcp_config():
-    """生成 MCP 配置"""
+    """Generate the MCP config"""
     from . import server
     mcp_config = {
         "command": get_python_executable(),
@@ -63,12 +63,12 @@ def generate_mcp_config():
 
 
 def print_mcp_config():
-    """打印 MCP 配置"""
+    """Print the MCP config"""
     print(json.dumps({"mcpServers": {"ida-pro-mcp": generate_mcp_config()}}, indent=2))
 
 
 def install_mcp_servers(*, uninstall=False, quiet=False):
-    """安装/卸载 MCP 服务器配置"""
+    """Install/uninstall the MCP server config"""
     special_json_structures = {
         "VS Code": ("mcp", "servers"),
         "VS Code Insiders": ("mcp", "servers"),
@@ -226,7 +226,7 @@ def install_mcp_servers(*, uninstall=False, quiet=False):
 
 
 def install_ida_plugin(*, uninstall=False, quiet=False, allow_ida_free=False):
-    """安装/卸载 IDA 插件"""
+    """Install/uninstall the IDA plugin"""
     if sys.platform == "win32":
         ida_folder = os.path.join(os.environ["APPDATA"], "Hex-Rays", "IDA Pro")
     else:

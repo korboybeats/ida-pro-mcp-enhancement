@@ -1,9 +1,9 @@
-"""工具定义解析器
+"""Tool definition parser
 
-从 ida_mcp/api_*.py 文件中解析工具、资源定义，
-生成 MCP 工具 schema，供 server.py 注册使用。
+Parses tool and resource definitions from ida_mcp/api_*.py files,
+generates MCP tool schemas for server.py to register.
 
-不导入任何IDA模块，仅解析源代码。
+Does not import any IDA modules; only parses the source code.
 """
 
 import ast
@@ -11,12 +11,12 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-# TypedDict 解析器导出的注册表：{TypeName: {"properties": {...}, "required": [...]}}
+# Registry exported by the TypedDict parser: {TypeName: {"properties": {...}, "required": [...]}}
 _TYPEDDICT_REGISTRY: dict[str, dict] = {}
 
 
 class TypedDictParser(ast.NodeVisitor):
-    """AST 解析器，从 utils.py 提取 TypedDict 类定义"""
+    """AST parser that extracts TypedDict class definitions from utils.py"""
 
     def __init__(self):
         self.registry: dict[str, dict] = {}
@@ -141,7 +141,7 @@ class TypedDictParser(ast.NodeVisitor):
 
 
 def _load_typeddict_registry():
-    """从 utils.py 加载 TypedDict 注册表（仅 AST，不执行）"""
+    """Load the TypedDict registry from utils.py (AST only, does not execute)"""
     global _TYPEDDICT_REGISTRY
     if _TYPEDDICT_REGISTRY:
         return
@@ -162,9 +162,9 @@ def _load_typeddict_registry():
 
 @dataclass
 class ToolParam:
-    """工具参数定义"""
+    """Tool parameter definition"""
     name: str
-    type_str: str  # 原始类型字符串
+    type_str: str  # raw type string
     description: str
     required: bool = True
     default: Any = None
@@ -172,7 +172,7 @@ class ToolParam:
 
 @dataclass
 class ToolDef:
-    """工具定义"""
+    """Tool definition"""
     name: str
     description: str
     params: list[ToolParam] = field(default_factory=list)
@@ -183,7 +183,7 @@ class ToolDef:
 
 @dataclass
 class ResourceDef:
-    """资源定义"""
+    """Resource definition"""
     uri: str
     name: str
     description: str
@@ -192,38 +192,38 @@ class ResourceDef:
 
 
 class ToolParser(ast.NodeVisitor):
-    """AST解析器，提取@tool和@resource装饰的函数"""
-    
+    """AST parser that extracts functions decorated with @tool and @resource"""
+
     def __init__(self, source_file: str = ""):
         self.tools: list[ToolDef] = []
         self.resources: list[ResourceDef] = []
         self.source_file = source_file
         self._unsafe_funcs: set[str] = set()
-    
+
     def visit_FunctionDef(self, node: ast.FunctionDef):
-        """访问函数定义"""
+        """Visit a function definition"""
         decorators = self._get_decorators(node)
-        
-        # 检查是否有 @unsafe 装饰器
+
+        # Check for the @unsafe decorator
         is_unsafe = "unsafe" in decorators
-        
-        # 检查 @tool 装饰器
+
+        # Check for the @tool decorator
         if "tool" in decorators:
             tool_def = self._parse_tool(node, is_unsafe)
             if tool_def:
                 self.tools.append(tool_def)
-        
-        # 检查 @resource 装饰器
+
+        # Check for the @resource decorator
         resource_uri = decorators.get("resource")
         if resource_uri:
             resource_def = self._parse_resource(node, resource_uri)
             if resource_def:
                 self.resources.append(resource_def)
-        
+
         self.generic_visit(node)
-    
+
     def _get_decorators(self, node: ast.FunctionDef) -> dict[str, Any]:
-        """获取函数的装饰器"""
+        """Get the decorators of a function"""
         decorators = {}
         for dec in node.decorator_list:
             if isinstance(dec, ast.Name):
@@ -237,9 +237,9 @@ class ToolParser(ast.NodeVisitor):
                     else:
                         decorators[dec.func.id] = True
         return decorators
-    
+
     def _parse_tool(self, node: ast.FunctionDef, is_unsafe: bool) -> Optional[ToolDef]:
-        """解析工具函数"""
+        """Parse a tool function"""
         name = node.name
         description = ast.get_docstring(node) or f"Call {name}"
         params = self._parse_params(node)
@@ -255,7 +255,7 @@ class ToolParser(ast.NodeVisitor):
         )
     
     def _parse_resource(self, node: ast.FunctionDef, uri: str) -> Optional[ResourceDef]:
-        """解析资源函数"""
+        """Parse a resource function"""
         name = node.name
         description = ast.get_docstring(node) or f"Resource {uri}"
         return_type = self._get_return_type(node)
@@ -269,31 +269,31 @@ class ToolParser(ast.NodeVisitor):
         )
     
     def _parse_params(self, node: ast.FunctionDef) -> list[ToolParam]:
-        """解析函数参数"""
+        """Parse function parameters"""
         params = []
         defaults_offset = len(node.args.args) - len(node.args.defaults)
-        
+
         for i, arg in enumerate(node.args.args):
-            # 跳过 self 参数
+            # Skip the self parameter
             if arg.arg == "self":
                 continue
-            
+
             param_name = arg.arg
             type_str = "Any"
             description = ""
-            
-            # 解析类型注解
+
+            # Parse the type annotation
             if arg.annotation:
                 type_str, description = self._parse_annotation(arg.annotation)
-            
-            # 检查是否有默认值
+
+            # Check whether a default value exists
             default_idx = i - defaults_offset
             has_default = default_idx >= 0 and default_idx < len(node.args.defaults)
             default_value = None
             if has_default:
                 default_node = node.args.defaults[default_idx]
                 default_value = self._get_constant_value(default_node)
-            
+
             params.append(ToolParam(
                 name=param_name,
                 type_str=type_str,
@@ -301,11 +301,11 @@ class ToolParser(ast.NodeVisitor):
                 required=not has_default,
                 default=default_value,
             ))
-        
+
         return params
-    
+
     def _parse_annotation(self, node: ast.expr) -> tuple[str, str]:
-        """解析类型注解，返回 (type_str, description)"""
+        """Parse a type annotation, returning (type_str, description)"""
         # Annotated[type, "description"]
         if isinstance(node, ast.Subscript):
             if isinstance(node.value, ast.Name) and node.value.id == "Annotated":
@@ -317,14 +317,14 @@ class ToolParser(ast.NodeVisitor):
                     if isinstance(desc_node, ast.Constant):
                         description = str(desc_node.value)
                     return type_str, description
-            # 其他泛型类型如 list[str], Optional[int]
+            # Other generic types such as list[str], Optional[int]
             return self._node_to_type_str(node), ""
-        
-        # 简单类型
+
+        # Simple type
         return self._node_to_type_str(node), ""
-    
+
     def _node_to_type_str(self, node: ast.expr) -> str:
-        """将AST节点转换为类型字符串"""
+        """Convert an AST node to a type string"""
         if isinstance(node, ast.Name):
             return node.id
         elif isinstance(node, ast.Constant):
@@ -344,15 +344,15 @@ class ToolParser(ast.NodeVisitor):
         elif isinstance(node, ast.Attribute):
             return f"{self._node_to_type_str(node.value)}.{node.attr}"
         return "Any"
-    
+
     def _get_return_type(self, node: ast.FunctionDef) -> str:
-        """获取返回类型"""
+        """Get the return type"""
         if node.returns:
             return self._node_to_type_str(node.returns)
         return "Any"
-    
+
     def _get_constant_value(self, node: ast.expr) -> Any:
-        """获取常量值"""
+        """Get a constant value"""
         if isinstance(node, ast.Constant):
             return node.value
         elif isinstance(node, ast.List):
@@ -369,73 +369,73 @@ class ToolParser(ast.NodeVisitor):
 
 
 def parse_api_file(filepath: str) -> tuple[list[ToolDef], list[ResourceDef]]:
-    """解析单个API文件"""
+    """Parse a single API file"""
     with open(filepath, "r", encoding="utf-8") as f:
         source = f.read()
-    
+
     try:
         tree = ast.parse(source)
     except SyntaxError as e:
-        print(f"[tool_registry] 解析错误 {filepath}: {e}")
+        print(f"[tool_registry] Parse error {filepath}: {e}")
         return [], []
-    
+
     parser = ToolParser(source_file=os.path.basename(filepath))
     parser.visit(tree)
-    
+
     return parser.tools, parser.resources
 
 
 def parse_all_api_files(api_dir: str) -> tuple[list[ToolDef], list[ResourceDef]]:
-    """解析目录下所有 api_*.py 文件"""
+    """Parse all api_*.py files under the directory"""
     all_tools: list[ToolDef] = []
     all_resources: list[ResourceDef] = []
-    
+
     if not os.path.isdir(api_dir):
-        print(f"[tool_registry] 目录不存在: {api_dir}")
+        print(f"[tool_registry] Directory does not exist: {api_dir}")
         return all_tools, all_resources
-    
+
     for filename in sorted(os.listdir(api_dir)):
         if filename.startswith("api_") and filename.endswith(".py"):
-            # 跳过 api_instances.py（这是连接管理，不是IDA工具）
+            # Skip api_instances.py (it is connection management, not an IDA tool)
             if filename == "api_instances.py":
                 continue
-            
+
             filepath = os.path.join(api_dir, filename)
             tools, resources = parse_api_file(filepath)
             all_tools.extend(tools)
             all_resources.extend(resources)
-    
+
     return all_tools, all_resources
 
 
 def type_str_to_json_schema(type_str: str) -> dict:
-    """将类型字符串转换为JSON Schema"""
+    """Convert a type string to a JSON Schema"""
     _load_typeddict_registry()
     type_str = type_str.strip()
-    
-    # 处理 Union 类型 (list[str] | str)
+
+    # Handle Union type (list[str] | str)
     if " | " in type_str:
         parts = [p.strip() for p in type_str.split(" | ")]
         non_none = [p for p in parts if p.lower() not in ("none", "nonetype")]
         if len(non_none) == 1:
             return type_str_to_json_schema(non_none[0])
         return {"anyOf": [type_str_to_json_schema(p) for p in non_none]}
-    
-    # 处理 Optional[T]
+
+    # Handle Optional[T]
     if type_str.startswith("Optional[") and type_str.endswith("]"):
         inner = type_str[9:-1]
         return type_str_to_json_schema(inner)
-    
-    # 处理 list[T]
+
+    # Handle list[T]
     if type_str.startswith("list[") and type_str.endswith("]"):
         inner = type_str[5:-1]
         return {"type": "array", "items": type_str_to_json_schema(inner)}
-    
-    # 处理 dict[K, V]
+
+    # Handle dict[K, V]
     if type_str.startswith("dict[") and type_str.endswith("]"):
         return {"type": "object"}
-    
-    # 基本类型映射
+
+    # Basic type mapping
     type_map = {
         "str": {"type": "string"},
         "int": {"type": "integer"},
@@ -444,24 +444,24 @@ def type_str_to_json_schema(type_str: str) -> dict:
         "None": {"type": "null"},
         "Any": {},
     }
-    
-    # 检查是否是已知类型
+
+    # Check whether it is a known type
     base_type = type_str.split("[")[0]
     if base_type in type_map:
         return type_map[base_type]
-    
-    # 查询 TypedDict 注册表
+
+    # Query the TypedDict registry
     if base_type in _TYPEDDICT_REGISTRY:
         return dict(_TYPEDDICT_REGISTRY[base_type])
-    
+
     return {"type": "object"}
 
 
 def tool_to_mcp_schema(tool: ToolDef) -> dict:
-    """将 ToolDef 转换为 MCP 工具 schema"""
+    """Convert a ToolDef to an MCP tool schema"""
     properties = {}
     required = []
-    
+
     for param in tool.params:
         prop = type_str_to_json_schema(param.type_str)
         if param.description:
@@ -469,17 +469,17 @@ def tool_to_mcp_schema(tool: ToolDef) -> dict:
         if param.default is not None:
             prop["default"] = param.default
         properties[param.name] = prop
-        
+
         if param.required:
             required.append(param.name)
-            
-    # 强制注入 instance_id 用于无缝路由
+
+    # Forcibly inject instance_id for seamless routing
     properties["instance_id"] = {
         "type": "string",
-        "description": "必须提供的 instance_id（或 client_id），用于将请求精确路由到特定的 IDA 实例。请先调用 instance_list 查看并选择合适的客户端 ID。"
+        "description": "Required instance_id (or client_id) used to precisely route the request to a specific IDA instance. Call instance_list first to view and select an appropriate client ID."
     }
     required.append("instance_id")
-    
+
     schema = {
         "name": tool.name,
         "description": tool.description,
@@ -488,15 +488,15 @@ def tool_to_mcp_schema(tool: ToolDef) -> dict:
             "properties": properties,
         },
     }
-    
+
     if required:
         schema["inputSchema"]["required"] = required
-    
+
     return schema
 
 
 def resource_to_mcp_schema(resource: ResourceDef) -> dict:
-    """将 ResourceDef 转换为 MCP 资源 schema"""
+    """Convert a ResourceDef to an MCP resource schema"""
     return {
         "uri": resource.uri,
         "name": resource.name,
@@ -505,26 +505,26 @@ def resource_to_mcp_schema(resource: ResourceDef) -> dict:
 
 
 # ============================================================================
-# 测试
+# Tests
 # ============================================================================
 
 if __name__ == "__main__":
     import sys
-    
-    # 获取 api 目录
+
+    # Get the api directory
     script_dir = os.path.dirname(os.path.realpath(__file__))
     api_dir = os.path.join(script_dir, "ida_mcp")
-    
-    print(f"解析目录: {api_dir}")
+
+    print(f"Parsing directory: {api_dir}")
     tools, resources = parse_all_api_files(api_dir)
-    
-    print(f"\n找到 {len(tools)} 个工具:")
+
+    print(f"\nFound {len(tools)} tools:")
     for t in tools:
         params_str = ", ".join(f"{p.name}: {p.type_str}" for p in t.params)
         print(f"  - {t.name}({params_str}) -> {t.return_type}")
         if t.is_unsafe:
             print(f"    [UNSAFE]")
-    
-    print(f"\n找到 {len(resources)} 个资源:")
+
+    print(f"\nFound {len(resources)} resources:")
     for r in resources:
         print(f"  - {r.uri} -> {r.name}")

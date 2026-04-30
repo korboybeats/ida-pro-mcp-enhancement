@@ -304,10 +304,10 @@ def patch_asm(items: list[AsmPatchOp] | AsmPatchOp) -> list[PatchAsmResult]:
 def rename(
     batch: Annotated[
         RenameBatch,
-        "批量重命名: 函数、全局变量、局部变量、栈变量。batch 可为空{}。格式: {func:[{addr,name}], data:[{old,new}], ...}",
+        "Batch rename: functions, global variables, local variables, stack variables. batch may be empty {}. Format: {func:[{addr,name}], data:[{old,new}], ...}",
     ],
 ) -> RenameResult:
-    """批量重命名: 函数、全局变量、局部变量、栈变量。支持 dry_run 等选项。"""
+    """Batch rename: functions, global variables, local variables, stack variables. Supports options like dry_run."""
 
     stop_on_error = bool(batch.get("stop_on_error", False))
     dry_run = bool(batch.get("dry_run", False))

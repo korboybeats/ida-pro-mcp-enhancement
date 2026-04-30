@@ -55,9 +55,10 @@ call_stack = queue.LifoQueue()
 
 def _sync_wrapper(ff):
     """Call a function ff on IDA main thread with batch mode enabled.
-    
-    批处理模式(batch mode)必须在IDA主线程中设置和恢复，否则会导致
-    IDA全局状态不一致，影响用户交互（如G键跳转对话框）。
+
+    Batch mode must be set and restored on the IDA main thread; otherwise
+    IDA's global state becomes inconsistent and affects user interaction
+    (e.g. the G-key jump dialog).
     """
 
     res_container = queue.Queue()

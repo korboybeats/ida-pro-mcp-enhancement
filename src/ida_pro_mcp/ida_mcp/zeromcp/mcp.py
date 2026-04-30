@@ -610,14 +610,14 @@ class McpServer:
             "protocolVersion": getattr(self._protocol_version, "data", protocolVersion),
             "capabilities": {
                 "tools": {
-                    "listChanged": True,  # 支持动态工具列表更新通知
+                    "listChanged": True,  # Supports dynamic tool list update notifications
                 },
                 "resources": {
                     "subscribe": False,
-                    "listChanged": True,  # 支持动态资源列表更新通知
+                    "listChanged": True,  # Supports dynamic resource list update notifications
                 },
                 "prompts": {
-                    "listChanged": True,  # 支持动态提示列表更新通知
+                    "listChanged": True,  # Supports dynamic prompt list update notifications
                 },
             },
             "serverInfo": {

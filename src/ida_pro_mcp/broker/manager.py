@@ -1,13 +1,16 @@
-"""Broker 架构管理 (纯路由)
+"""Broker architecture management (pure routing)
 
-Broker 进程在此仅做：
-1. 请求透传：把 Cursor 发来的 tools/call / resources/read 等请求通过 SSE
-   推送给目标 IDA 实例，并把响应原样带回。
-2. tools/list 装饰：替换 IDA 工具的 schema，并**追加**两个"虚拟工具"
-   (`refresh_cache`, `cache_status`) 的 schema 给大模型看见。
+In this module the Broker process only does:
+1. Request pass-through: forwards tools/call / resources/read and similar
+   requests sent by Cursor via SSE to the target IDA instance, and returns
+   the response unchanged.
+2. tools/list decoration: replaces the schema of IDA tools, and **appends**
+   the schemas of two "virtual tools" (`refresh_cache`, `cache_status`) so
+   the LLM can see them.
 
-真正的缓存读写 (SQLite) 工作在 IDA 插件进程中完成，Broker 进程严禁
-import `sqlite_cache` / `sqlite_query`，避免污染路由职责。
+The actual cache reads/writes (SQLite) are performed inside the IDA plugin
+process. The Broker process must NOT import `sqlite_cache` / `sqlite_query`,
+to avoid polluting the routing responsibility.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ _broker_client: Optional[BrokerClient] = None
 
 
 def get_broker_client(broker_url: Optional[str] = None) -> BrokerClient:
-    """获取 Broker 客户端，MCP 模式下必有。"""
+    """Get the Broker client; required in MCP mode."""
     global _broker_client
     if _broker_client is None:
         _broker_client = BrokerClient(
@@ -42,21 +45,21 @@ def get_broker_client(broker_url: Optional[str] = None) -> BrokerClient:
 
 
 # ---------------------------------------------------------------------------
-# 虚拟缓存工具 Schema (仅由 Broker 在 tools/list 里插入，不在 Broker 执行)
+# Virtual cache tool schemas (only inserted by the Broker into tools/list, not executed in the Broker)
 # ---------------------------------------------------------------------------
 
 
 _INSTANCE_ID_PROP: dict[str, str] = {
     "type": "string",
     "description": (
-        "必须提供的 instance_id（或 client_id），用于将请求精确路由到特定的 IDA 实例。"
-        "请先调用 instance_list 查看并选择合适的客户端 ID。"
+        "Required instance_id (or client_id), used to route the request precisely to a specific IDA instance. "
+        "Call instance_list first to view and pick an appropriate client ID."
     ),
 }
 
 
 def _build_cache_tool_schemas() -> list[ToolSchema]:
-    """生成 refresh_cache / cache_status 两个虚拟工具的 MCP schema。"""
+    """Generate the MCP schemas for the two virtual tools refresh_cache / cache_status."""
     refresh_input: ToolInputSchema = {
         "type": "object",
         "properties": {"instance_id": dict(_INSTANCE_ID_PROP)},
@@ -71,16 +74,16 @@ def _build_cache_tool_schemas() -> list[ToolSchema]:
         {
             "name": "refresh_cache",
             "description": (
-                "请求指定 IDA 实例立即刷新其本地 SQLite 静态缓存 (xxx.idb.mcp.sqlite)。"
-                "实际刷新仍然需要 IDA 进入 idle 状态才会执行，此工具仅唤醒插件端守护线程并立即返回。"
+                "Request the specified IDA instance to immediately refresh its local SQLite static cache (xxx.idb.mcp.sqlite). "
+                "The actual refresh still requires IDA to enter idle state before it runs; this tool only wakes the plugin-side daemon thread and returns immediately."
             ),
             "inputSchema": refresh_input,
         },
         {
             "name": "cache_status",
             "description": (
-                "查询指定 IDA 实例的本地 SQLite 静态缓存状态 (status / last_updated / 各表计数)。"
-                "当 status != 'ready' 时，find_regex / entity_query / list_funcs / list_globals / imports 等工具将返回错误并提示稍后重试。"
+                "Query the local SQLite static cache status of the specified IDA instance (status / last_updated / per-table counts). "
+                "When status != 'ready', tools such as find_regex / entity_query / list_funcs / list_globals / imports will return an error and ask to retry later."
             ),
             "inputSchema": status_input,
         },
@@ -88,42 +91,42 @@ def _build_cache_tool_schemas() -> list[ToolSchema]:
 
 
 # ---------------------------------------------------------------------------
-# 实例管理工具
+# Instance management tools
 # ---------------------------------------------------------------------------
 
 
 def register_broker_tools(mcp):
-    """注册实例管理工具（通过 Broker 客户端，无需本地 REGISTRY）。"""
+    """Register instance management tools (via the Broker client, no local REGISTRY needed)."""
 
     @mcp.tool
     def instance_list() -> list[dict]:
-        """列出所有已连接的 IDA/Hopper 实例。无需加载 IDB。返回 instance_id,name,binary_path,idb_path,base_addr。"""
+        """List all connected IDA/Hopper instances. Does not require loading an IDB. Returns instance_id, name, binary_path, idb_path, base_addr."""
         return get_broker_client().list_instances()
 
     @mcp.tool
     def instance_info(instance_id: str) -> dict:
-        """获取指定实例详情。instance_id 来自 instance_list。返回 binary_path,idb_path,base_addr,processor 等。"""
+        """Get details of the specified instance. instance_id comes from instance_list. Returns binary_path, idb_path, base_addr, processor, etc."""
         instances = get_broker_client().list_instances()
         for inst in instances:
             if inst.get("instance_id") == instance_id:
                 return inst
-        return {"error": f"实例不存在: {instance_id}"}
+        return {"error": f"Instance not found: {instance_id}"}
 
 
 # ---------------------------------------------------------------------------
-# 请求路由：原样转发到目标 IDA
+# Request routing: forward to the target IDA as-is
 # ---------------------------------------------------------------------------
 
 
 def route_to_ida(request: dict) -> JsonRpcResponse | None:
-    """将请求路由到指定的 IDA 实例 (通过 Broker)。"""
+    """Route the request to the specified IDA instance (via the Broker)."""
     broker = get_broker_client()
     if not broker.has_instances():
         return {
             "jsonrpc": "2.0",
             "error": {
                 "code": -32000,
-                "message": "没有活动的 IDA 实例。请启动 IDA 并按 Ctrl+Alt+M 连接。",
+                "message": "No active IDA instance. Please start IDA and press Ctrl+Alt+M to connect.",
             },
             "id": request.get("id"),
         }
@@ -137,33 +140,33 @@ def route_to_ida(request: dict) -> JsonRpcResponse | None:
                 "jsonrpc": "2.0",
                 "error": {
                     "code": -32602,
-                    "message": "必须提供 instance_id 参数。请先调用 instance_list 查看并选择合适的客户端 ID。",
+                    "message": "instance_id parameter must be provided. Call instance_list first to view and pick an appropriate client ID.",
                 },
                 "id": request.get("id"),
             }
-        # 提取并移除 instance_id，避免发给 IDA 的真实参数出现多余字段
+        # Extract and remove instance_id so the actual arguments sent to IDA do not include the extra field
         instance_id = args.pop("instance_id")
-    # 对于非 tool/call 请求 (例如 resources/read)，由 Broker 根据在册实例数自动选择。
+    # For non-tool/call requests (e.g. resources/read), the Broker selects automatically based on the registered instance count.
 
     response = broker.send_request(request, instance_id)
     if response is None:
         return {
             "jsonrpc": "2.0",
-            "error": {"code": -32000, "message": "IDA 请求超时"},
+            "error": {"code": -32000, "message": "IDA request timeout"},
             "id": request.get("id"),
         }
     return cast(JsonRpcResponse, response)
 
 
 # ---------------------------------------------------------------------------
-# dispatch 代理
+# dispatch proxy
 # ---------------------------------------------------------------------------
 
 
 def setup_dispatch_proxy(mcp, original_dispatch, ida_tools, ida_tool_schemas):
-    """设置代理 dispatch：IDA 工具 → 转发，其他 → 本地处理。"""
+    """Set up a proxy dispatch: IDA tools -> forward, others -> handle locally."""
 
-    # Broker 进程生成虚拟工具 schema；名称也加进 ida_tools，使得 tools/call 走路由而不是原 dispatch
+    # The Broker process generates virtual tool schemas; their names are also added to ida_tools so that tools/call goes through the route instead of the original dispatch
     extra_cache_schemas: list[ToolSchema] = _build_cache_tool_schemas()
     extra_cache_names: set[str] = {s["name"] for s in extra_cache_schemas}
 
@@ -175,11 +178,11 @@ def setup_dispatch_proxy(mcp, original_dispatch, ida_tools, ida_tool_schemas):
 
         method = req.get("method", "")
 
-        # 本地协议方法
+        # Local protocol methods
         if method in {"initialize", "ping"} or method.startswith("notifications/"):
             return original_dispatch(req)
 
-        # tools/call - 判断是否需要转发给 IDA
+        # tools/call - decide whether to forward to IDA
         if method == "tools/call":
             params = req.get("params", {})
             tool_name = params.get("name", "") if isinstance(params, dict) else ""
@@ -189,14 +192,14 @@ def setup_dispatch_proxy(mcp, original_dispatch, ida_tools, ida_tool_schemas):
 
             return original_dispatch(req)
 
-        # tools/list - 先用上游 dispatch，再覆盖 IDA 工具 schema，然后追加虚拟工具
+        # tools/list - first call upstream dispatch, then override IDA tool schemas, then append virtual tools
         if method == "tools/list":
             response = original_dispatch(req)
             tools = response.get("result", {}).get("tools", []) if response else []
             for i, tool in enumerate(tools):
                 if tool.get("name") in ida_tool_schemas:
                     tools[i] = ida_tool_schemas[tool["name"]]
-            # 追加虚拟缓存工具 schema
+            # Append virtual cache tool schemas
             existing_names = {t.get("name") for t in tools}
             for schema in extra_cache_schemas:
                 if schema["name"] not in existing_names:
@@ -206,17 +209,17 @@ def setup_dispatch_proxy(mcp, original_dispatch, ida_tools, ida_tool_schemas):
             instances = broker.list_instances()
             if instances:
                 print(
-                    f"[MCP] tools/list: {len(tools)} 个工具 (活跃 IDA 实例数: {len(instances)})",
+                    f"[MCP] tools/list: {len(tools)} tools (active IDA instances: {len(instances)})",
                     file=sys.stderr,
                 )
             else:
                 print(
-                    f"[MCP] tools/list: {len(tools)} 个工具 (等待 IDA 连接)",
+                    f"[MCP] tools/list: {len(tools)} tools (waiting for IDA connection)",
                     file=sys.stderr,
                 )
             return response
 
-        # resources 相关
+        # resources-related
         if method == "resources/list":
             return original_dispatch(req)
         if method == "resources/templates/list":
@@ -229,28 +232,28 @@ def setup_dispatch_proxy(mcp, original_dispatch, ida_tools, ida_tool_schemas):
                 )
             return route_to_ida(req)
 
-        # prompts 相关
+        # prompts-related
         if method in {"prompts/list", "prompts/get"}:
             return original_dispatch(req)
 
-        # 其他请求转发到 IDA
+        # All other requests are forwarded to IDA
         return route_to_ida(req)
 
     mcp.registry.dispatch = dispatch_proxy
 
 
 # ---------------------------------------------------------------------------
-# 入口
+# Entry point
 # ---------------------------------------------------------------------------
 
 
 def run_broker(port: int):
-    """启动 Broker 服务器，阻塞主线程。"""
+    """Start the Broker server, blocking the main thread."""
     from .server import IDAHttpServer
 
     server = IDAHttpServer(port=port)
     server.start()
-    print("[MCP] Broker 已启动，按 Ctrl+C 停止", file=sys.stderr)
+    print("[MCP] Broker started, press Ctrl+C to stop", file=sys.stderr)
     try:
         while True:
             time.sleep(3600)

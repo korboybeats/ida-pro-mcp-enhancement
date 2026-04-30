@@ -750,13 +750,13 @@ def _profile_function(
 def decompile(
     addr: Annotated[
         str,
-        "函数地址或名称。支持: 0x401000、401000、sub_401000、start、main。",
+        "Function address or name. Supports: 0x401000, 401000, sub_401000, start, main.",
     ],
     include_addresses: Annotated[
         bool, "Append /*0xNNNN*/ markers per line (default: true). Set false to save tokens."
     ] = True,
 ) -> DecompileResult:
-    """反编译函数为伪代码(C 风格)。输入地址或符号名。返回 addr,code。失败返回 error。"""
+    """Decompile a function to pseudocode (C-style). Input is an address or symbol name. Returns addr, code. On failure returns error."""
     try:
         start = parse_address(addr)
         code = decompile_function_safe(start, include_addresses=include_addresses)
@@ -785,7 +785,7 @@ def decompile(
 def disasm(
     addr: Annotated[
         str,
-        "函数地址或名称。支持: 0x401000、start、main。",
+        "Function address or name. Supports: 0x401000, start, main.",
     ],
     max_instructions: Annotated[
         int, "Max instructions per function (default: 5000, max: 50000)"
@@ -795,7 +795,7 @@ def disasm(
         bool, "Compute total instruction count (default: false)"
     ] = False,
 ) -> DisasmResult:
-    """反汇编函数为汇编指令。输入地址或符号名。返回 addr,asm(行列表),cursor。支持 offset/分页。"""
+    """Disassemble a function into assembly instructions. Input is an address or symbol name. Returns addr, asm (line list), cursor. Supports offset / pagination."""
 
     # Enforce max limit
     if max_instructions <= 0 or max_instructions > 50000:
@@ -1233,11 +1233,11 @@ def analyze_batch(
 def xrefs_to(
     addrs: Annotated[
         list[str] | str,
-        "目标地址。支持 hex、符号名、逗号分隔。例: '0x401000'、'main, 0x402000'",
+        "Target address. Supports hex, symbol name, comma-separated. Examples: '0x401000', 'main, 0x402000'",
     ],
     limit: Annotated[int, "Max xrefs per address (default: 100, max: 1000)"] = 100,
 ) -> list[XrefsToResult]:
-    """获取交叉引用(引用的目标地址)。"""
+    """Get cross-references (xrefs to target address)."""
     addrs = normalize_list_input(addrs)
 
     if limit <= 0 or limit > 1000:
@@ -1486,7 +1486,7 @@ def xrefs_to_field(
 def callees(
     addrs: Annotated[
         list[str] | str,
-        "函数地址。该函数内调用的目标列表。支持 hex、符号名、逗号分隔。",
+        "Function address. List of call targets invoked by the function. Supports hex, symbol name, comma-separated.",
     ],
     limit: Annotated[int, "Max callees per function (default: 200, max: 500)"] = 200,
 ) -> list[CalleesResult]:
@@ -1659,7 +1659,7 @@ def find_bytes(
 def basic_blocks(
     addrs: Annotated[
         list[str] | str,
-        "函数地址。获取该函数的基本块及控制流。支持 hex、符号名。",
+        "Function address. Get the basic blocks and control flow of the function. Supports hex, symbol name.",
     ],
     max_blocks: Annotated[
         int, "Max basic blocks per function (default: 1000, max: 10000)"
@@ -2240,13 +2240,13 @@ def insn_query(
 def export_funcs(
     addrs: Annotated[
         list[str] | str,
-        "函数地址或名称。支持 hex、符号名(start/main)。导出为 json/c_header/prototypes。",
+        "Function address or name. Supports hex, symbol name (start/main). Exports as json/c_header/prototypes.",
     ],
     format: Annotated[
         str, "Export format: json (default), c_header, or prototypes"
     ] = "json",
 ) -> ExportFuncsJsonResult | ExportFuncsHeaderResult | ExportFuncsPrototypesResult:
-    """导出函数数据。format: json(含 asm/code/xrefs)、c_header、prototypes。输入地址或符号名。"""
+    """Export function data. format: json (includes asm/code/xrefs), c_header, prototypes. Input is an address or symbol name."""
     addrs = normalize_list_input(addrs)
     results = []
 
@@ -2307,7 +2307,7 @@ def export_funcs(
 def callgraph(
     roots: Annotated[
         list[str] | str,
-        "起始函数地址或名称。从该函数开始遍历调用图。支持 hex、符号名。",
+        "Starting function address or name. Traverse the call graph starting from this function. Supports hex, symbol name.",
     ],
     max_depth: Annotated[int, "Maximum depth for call graph traversal"] = 5,
     max_nodes: Annotated[

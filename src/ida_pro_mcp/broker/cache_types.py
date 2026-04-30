@@ -1,12 +1,13 @@
-"""缓存模块协议类型 (TypedDict)
+"""Cache module protocol types (TypedDict)
 
-所有 Broker 端 / IDA 插件端共享的请求 / 响应协议类型集中放在这里。
-Broker 进程只 import 本文件即可，不应 import `ida_pro_mcp.ida_mcp` 下任何
-模块，以免触发 `idaapi` 等 IDA 专属依赖的加载。
+All request/response protocol types shared between the Broker and the IDA
+plugin live here. The Broker process imports this file directly and must
+not import any module under `ida_pro_mcp.ida_mcp` to avoid pulling in
+IDA-only dependencies like `idaapi`.
 
-本文件独立重声明了必要的 JSON-RPC TypedDict，避免通过
-`ida_pro_mcp.ida_mcp.zeromcp.jsonrpc` 这条路径经过 `ida_mcp/__init__.py`
-间接加载 IDA 模块。
+This file independently re-declares the JSON-RPC TypedDicts it needs so
+that we don't have to go through `ida_pro_mcp.ida_mcp.zeromcp.jsonrpc`,
+which would indirectly load IDA modules via `ida_mcp/__init__.py`.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
 
 
 # ---------------------------------------------------------------------------
-# JSON-RPC (与 ida_pro_mcp.ida_mcp.zeromcp.jsonrpc 协议兼容，独立声明)
+# JSON-RPC (protocol-compatible with ida_pro_mcp.ida_mcp.zeromcp.jsonrpc; declared independently)
 # ---------------------------------------------------------------------------
 
 JsonRpcId: TypeAlias = str | int | float | None
@@ -43,7 +44,7 @@ class JsonRpcResponse(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# 通用 Literal / 枚举
+# Common Literal / enum aliases
 # ---------------------------------------------------------------------------
 
 EntityKind: TypeAlias = Literal["strings", "functions", "globals", "imports"]
@@ -54,7 +55,7 @@ CacheRunStatus: TypeAlias = Literal["ready", "building", "missing"]
 
 
 # ---------------------------------------------------------------------------
-# 工具 Arguments  (传入 tools/call arguments.*)
+# Tool arguments (passed via tools/call arguments.*)
 # ---------------------------------------------------------------------------
 
 
@@ -107,7 +108,7 @@ class CacheStatusArgs(_BaseArgs):
 
 
 # ---------------------------------------------------------------------------
-# Xref / Item 结构
+# Xref / item structures
 # ---------------------------------------------------------------------------
 
 
@@ -150,7 +151,7 @@ EntityItem: TypeAlias = StringItem | FunctionItem | GlobalItem | ImportItem
 
 
 # ---------------------------------------------------------------------------
-# 工具返回值
+# Tool return values
 # ---------------------------------------------------------------------------
 
 
@@ -201,7 +202,7 @@ class CacheStatusResult(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# MCP 协议壳：tools/call 的 result 外形
+# MCP protocol shell: shape of the tools/call result
 # ---------------------------------------------------------------------------
 
 
@@ -216,7 +217,7 @@ class McpToolCallResult(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# tools/list schema 外形
+# tools/list schema shape
 # ---------------------------------------------------------------------------
 
 

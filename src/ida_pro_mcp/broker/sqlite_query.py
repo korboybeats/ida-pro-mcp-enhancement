@@ -1,10 +1,11 @@
-"""SQLite 缓存只读查询层（强类型）
+"""SQLite cache read-only query layer (strongly-typed)
 
-所有公开函数直接返回 `broker.cache_types` 中声明的 TypedDict，
-禁止返回弱类型字典或内部 dataclass。
+All public functions directly return the TypedDicts declared in
+`broker.cache_types`. Returning weakly-typed dicts or internal dataclasses
+is forbidden.
 
-IDA 插件进程在 `ida_mcp.py` 的拦截层中调用本模块；Broker 进程永远
-不应 import 本模块。
+The IDA plugin process calls this module from the interception layer in
+`ida_mcp.py`; the Broker process must never import this module.
 """
 
 from __future__ import annotations
@@ -38,16 +39,16 @@ CACHE_STATUS_BUILDING = "building"
 
 
 class CacheNotReadyError(RuntimeError):
-    """缓存还没写好 / 数据库文件不存在 / status != ready。"""
+    """Cache hasn't been written yet / database file doesn't exist / status != ready."""
 
 
 # ---------------------------------------------------------------------------
-# sqlite3 连接 / REGEXP 扩展
+# sqlite3 connection / REGEXP extension
 # ---------------------------------------------------------------------------
 
 
 def _regexp(expr: str, item: Optional[str]) -> int:
-    """SQLite 的 REGEXP 运算符实现 (大小写敏感，Python re)。"""
+    """Implementation of SQLite's REGEXP operator (case-sensitive, Python re)."""
     if item is None:
         return 0
     try:
@@ -59,8 +60,8 @@ def _regexp(expr: str, item: Optional[str]) -> int:
 def _open_readonly(db_path: str) -> sqlite3.Connection:
     if not os.path.exists(db_path):
         raise CacheNotReadyError(
-            f"IDA 本地 SQLite 缓存数据库尚未创建 ({db_path})，"
-            f"请等待插件完成首次分析或调用 refresh_cache 后重试。"
+            f"IDA local SQLite cache database has not been created yet ({db_path}). "
+            f"Please wait for the plugin to finish the first analysis or call refresh_cache and retry."
         )
     uri = f"file:{db_path}?mode=ro"
     conn = sqlite3.connect(uri, uri=True, timeout=5.0, check_same_thread=False)
@@ -76,25 +77,25 @@ def _read_status(conn: sqlite3.Connection) -> str:
 
 
 def ensure_ready(db_path: str) -> sqlite3.Connection:
-    """打开连接并确保 status=ready，否则抛 CacheNotReadyError。"""
+    """Open a connection and ensure status=ready, otherwise raise CacheNotReadyError."""
     conn = _open_readonly(db_path)
     status = _read_status(conn)
     if status != CACHE_STATUS_READY:
         conn.close()
         raise CacheNotReadyError(
-            f"IDA 本地 SQLite 缓存数据库正在初始化或仍在自动分析 (status={status!r})，"
-            f"请大模型稍后重试，或调用 refresh_cache 手动触发一次刷新。"
+            f"IDA local SQLite cache database is initializing or auto-analysis is still running (status={status!r}). "
+            f"Please ask the LLM to retry later, or call refresh_cache to manually trigger a refresh."
         )
     return conn
 
 
 def get_cache_path_for_binary(idb_path: Optional[str]) -> Optional[str]:
-    """把 IDB 路径映射为缓存数据库路径。"""
+    """Map an IDB path to its cache database path."""
     return resolve_cache_path(idb_path) if idb_path else None
 
 
 # ---------------------------------------------------------------------------
-# Row -> TypedDict 显式装配 (不用 dict(row) 弱兜底)
+# Row -> TypedDict explicit assembly (no weak fallback via dict(row))
 # ---------------------------------------------------------------------------
 
 
@@ -163,7 +164,7 @@ def _count(conn: sqlite3.Connection, sql: str, params: tuple) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 查询函数 (公开接口)
+# Query functions (public interface)
 # ---------------------------------------------------------------------------
 
 
@@ -404,12 +405,12 @@ def entity_query(
         }
 
     raise ValueError(
-        f"未知的 entity kind={kind!r}，支持: strings / functions / globals / imports"
+        f"Unknown entity kind={kind!r}, supported: strings / functions / globals / imports"
     )
 
 
 def cache_status(db_path: str) -> CacheStatusResult:
-    """查询缓存元信息；文件不存在时 status='missing'，不会抛错。"""
+    """Query cache metadata; if the file does not exist, status='missing' and no error is raised."""
     if not os.path.exists(db_path):
         return {
             "exists": False,

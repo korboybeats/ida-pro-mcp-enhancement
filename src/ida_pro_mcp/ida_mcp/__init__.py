@@ -1,13 +1,13 @@
-"""IDA Pro MCP Plugin - Modular Package Version（HTTP+SSE 版本）
+"""IDA Pro MCP Plugin - Modular Package Version (HTTP+SSE)
 
-通过 HTTP+SSE 与 MCP 服务器通信。
+Communicates with the MCP server via HTTP+SSE.
 
-架构:
+Architecture:
 - rpc.py: JSON-RPC infrastructure and registry
 - sync.py: IDA synchronization decorator (@idasync)
 - utils.py: Shared helpers and TypedDict definitions
 - api_*.py: Modular API implementations (71 tools + 24 resources)
-- api_instances.py: HTTP+SSE 连接管理
+- api_instances.py: HTTP+SSE connection management
 """
 
 # Ignore SIGPIPE to prevent IDA from being killed when an MCP client
@@ -80,7 +80,7 @@ __all__ = [
     "unsafe",
     "resource",
     "init_caches",
-    # HTTP+SSE 连接管理
+    # HTTP+SSE connection management
     "connect_to_server",
     "disconnect",
     "is_connected",
